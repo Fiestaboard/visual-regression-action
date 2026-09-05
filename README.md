@@ -10,6 +10,8 @@ Visual regression testing for GitHub Actions — baselines live in build artifac
 
 If the baseline artifact is missing or expired (GitHub Actions artifacts expire after at most 90 days), every screenshot reports as "new," the job passes with a note, and the next default-branch build self-heals by publishing a new baseline.
 
+The baseline used for comparison is the **newest baseline artifact on the branch**, even if that run later failed — the action does not check the producing run's conclusion. Keep your baseline-upload step after your capture step succeeds so a broken run doesn't publish a bad baseline.
+
 Screenshot *capture* is out of scope — bring your own tool (Playwright, Storybook, Cypress, ...) and point this action at the directory it writes PNGs to. See [examples/playwright.yml](examples/playwright.yml) and [examples/storybook.yml](examples/storybook.yml).
 
 ## Quick start
@@ -75,7 +77,11 @@ Results surface in three places:
 2. **`$GITHUB_STEP_SUMMARY`** — the same summary rendered on the workflow run page.
 3. **Downloadable `vrt-report[-<key>]` artifact** — a single self-contained `index.html` with baseline, current, and diff images side by side per screenshot, plus a swipe slider for changed images. No external requests; open it locally after downloading.
 
+The report inlines every screenshot as a base64 data URI directly in the HTML, so very large suites (many or very large screenshots) produce a correspondingly large artifact — keep screenshots reasonably sized (e.g. viewport-cropped rather than full-page where possible) if this becomes a concern.
+
 ## Recipes
+
+**Multiple workflows in one repo** — if more than one workflow file runs this action (not just multiple steps in the same workflow), give each workflow its own `key` too; otherwise their baseline artifacts share a name and can cross-contaminate each other's comparisons.
 
 **Matrix builds / multiple apps in one repo** — give each invocation a distinct `key` so artifact names don't collide (`vrt-baseline-<key>`, `vrt-report-<key>`):
 
@@ -143,6 +149,9 @@ There's no baseline artifact yet, so every screenshot reports as "new." The job 
 
 **Do artifacts cost money?**
 Baseline and report artifacts count toward your repository's Actions storage quota like any other artifact. Use `retention-days` to shorten how long they're kept if storage is a concern; GitHub also expires artifacts automatically after at most 90 days regardless of setting, at which point the next default-branch build self-heals the baseline.
+
+**Which run's baseline gets used?**
+The newest non-expired `vrt-baseline[-<key>]` artifact whose producing run is on the base branch — regardless of whether that run ultimately succeeded or failed. This is a deliberate v1 simplification: the action does not walk run conclusions, it just picks the newest matching artifact. If a run can fail after uploading the baseline, move the baseline-upload step after your capture step succeeds.
 
 ## License
 

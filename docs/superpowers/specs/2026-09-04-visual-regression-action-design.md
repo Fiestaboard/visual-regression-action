@@ -40,9 +40,10 @@ Upload `screenshots-dir` as artifact `vrt-baseline` (plus `-<key>` suffix when t
 
 ### Compare mode (pull_request)
 
-1. Via the GitHub API (`github-token`), list workflow runs on the PR's base branch;
-   find the most recent successful run that produced a `vrt-baseline[-<key>]`
-   artifact; download and extract it.
+1. Via the GitHub API (`github-token`), find the newest non-expired
+   `vrt-baseline[-<key>]` artifact whose producing run is on the base branch
+   (regardless of that run's final conclusion — this is a deliberate v1
+   simplification, not a check for run success); download and extract it.
 2. Diff baseline vs. `screenshots-dir` (matched by relative path).
 3. Generate report surfaces (HTML artifact, PR comment, step summary).
 4. Upload the HTML report as artifact `vrt-report[-<key>]`.
