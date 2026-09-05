@@ -86475,7 +86475,8 @@ function generateHtmlReport(summary, meta) {
   button.vote.reject[aria-pressed="true"] { background:#b91c1c; border-color:#b91c1c; color:#fff }
   button.lb-skip { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
     border-radius:8px; padding:4px 12px; font-size:13px }
-  .lb-tally { color:#9a9a9a; font-size:13px; font-variant-numeric:tabular-nums }
+  .lb-tally { color:#9a9a9a; font-size:12px; font-variant-numeric:tabular-nums }
+  .lb-progresslabel { color:#5a5d64; font-size:11px; text-transform:uppercase; letter-spacing:.06em }
   .lb-bar .tabs { margin:0 0 0 auto }
   .lightbox .tab { border-color:#3a3d44; color:#e8e8e8 }
   .lightbox .tab[aria-selected="true"] { background:#e8e8e8; color:#111; border-color:#e8e8e8 }
@@ -86552,8 +86553,6 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     <button class="vote approve" type="button" aria-pressed="false">Approve <kbd>A</kbd></button>
     <button class="vote reject" type="button" aria-pressed="false">Reject <kbd>R</kbd></button>
     <button class="lb-skip" type="button">Next unreviewed <kbd>U</kbd></button>
-    <span class="lb-tally"></span>
-    <div class="lb-dots" role="tablist" aria-label="review progress"></div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-mode="swipe" type="button">Swipe <kbd>S</kbd></button>
       <button class="tab" role="tab" data-mode="overlay" type="button">Overlay <kbd>O</kbd></button>
@@ -86569,7 +86568,10 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
   </div>
   <div class="lb-foot">
     <input class="scrub" type="range" min="0" max="100" value="50" aria-label="swipe position">
-    <span>scroll to zoom · drag to pan · double-click resets · <kbd>J</kbd>/<kbd>K</kbd> also navigate</span>
+    <span class="lb-progresslabel">progress</span>
+    <div class="lb-dots" role="tablist" aria-label="review progress"></div>
+    <span class="lb-tally"></span>
+    <span style="margin-left:auto">scroll to zoom · drag to pan · double-click resets · <kbd>J</kbd>/<kbd>K</kbd> also navigate</span>
   </div>
 </div>
 <div class="cmdbar" hidden>
@@ -86852,6 +86854,7 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     updateTally();
     updateDots();
     updateCmdbar();
+    if (!lb.hidden) fitAboveCmdbar();
   }
   function vote(v) {
     if (!votable(idx)) return;
@@ -86914,7 +86917,10 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     updateDots();
     updateTally();
   }
-  function open(i) { lb.hidden = false; resetZoom(); show(i); }
+  function fitAboveCmdbar() {
+    lb.style.bottom = (cmdbar.hidden ? 0 : cmdbar.offsetHeight) + 'px';
+  }
+  function open(i) { lb.hidden = false; resetZoom(); show(i); fitAboveCmdbar(); }
   function close() { lb.hidden = true; }
   var openFirst = document.querySelector('[data-open-first]');
   if (openFirst) openFirst.addEventListener('click', function () { open(0); });
