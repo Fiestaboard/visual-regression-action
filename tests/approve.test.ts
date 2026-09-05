@@ -1,5 +1,24 @@
 import { describe, it, expect, vi } from 'vitest';
-import { findVrtRunsToRerun } from '../src/approve';
+import { findVrtRunsToRerun, approvalReceivedBody } from '../src/approve';
+
+describe('approvalReceivedBody', () => {
+  it('names the approver, echoes the request, and links the rerun', () => {
+    const body = approvalReceivedBody('jeffredodd', '/vrt approve home.png@abc1234 all', [
+      'https://github.com/o/r/actions/runs/1',
+    ]);
+    expect(body).toContain('🔁 Approval received');
+    expect(body).toContain('@jeffredodd');
+    expect(body).toContain('`home.png@abc1234`');
+    expect(body).toContain('`all`');
+    expect(body).toContain('https://github.com/o/r/actions/runs/1');
+    expect(body).toContain('updates with the result');
+  });
+
+  it('explains when there is nothing to rerun', () => {
+    const body = approvalReceivedBody('jeffredodd', '/vrt approve all', []);
+    expect(body).toContain('nothing to rerun');
+  });
+});
 
 function mockOctokit(runs: unknown[], artifactsByRun: Record<number, string[]>) {
   return {

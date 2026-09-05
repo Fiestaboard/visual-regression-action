@@ -5,10 +5,10 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
-import { generateHtmlReport, generateMarkdownSummary, ReportMeta } from './report';
-import { upsertStickyComment, listPrComments } from './comment';
+import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
+import { upsertStickyComment, upsertMarkedComment, listPrComments, STATUS_MARKER } from './comment';
 import { parseApprovalCommands, applyApprovals, isApproveComment } from './approvals';
-import { findVrtRunsToRerun, rerunFailedJobs, reactToComment } from './approve';
+import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody } from './approve';
 import {
   baselineArtifactName,
   reportArtifactName,
@@ -157,6 +157,8 @@ async function run(): Promise<void> {
 
   if (comment && prNumber) {
     await upsertStickyComment(octokit, owner, repo, prNumber, md, key);
+    // Close the loop on the approval-status comment, if an approve run opened one.
+    await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalOutcomeBody(summary, meta), false);
   }
 
   core.setOutput('changed', String(summary.changed));
@@ -217,15 +219,16 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
   const octokit = github.getOctokit(token);
   const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
   const runs = await findVrtRunsToRerun(octokit, owner, repo, pr.head.sha);
-  if (runs.length === 0) {
-    core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
-    return;
-  }
+  const runUrls: string[] = [];
   for (const runId of runs) {
     await rerunFailedJobs(octokit, owner, repo, runId);
+    runUrls.push(`https://github.com/${owner}/${repo}/actions/runs/${runId}`);
     core.info(`Rerunning failed jobs of run ${runId} to re-evaluate approvals.`);
   }
+  if (runs.length === 0) core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
   if (commentId) await reactToComment(octokit, owner, repo, commentId);
+  const user: string = ctx.payload.comment?.user?.login ?? 'someone';
+  await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalReceivedBody(user, commentBody, runUrls));
 }
 
 run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));

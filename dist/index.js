@@ -85222,6 +85222,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.findVrtRunsToRerun = findVrtRunsToRerun;
 exports.rerunFailedJobs = rerunFailedJobs;
+exports.approvalReceivedBody = approvalReceivedBody;
 exports.reactToComment = reactToComment;
 const core = __importStar(__nccwpck_require__(37484));
 /**
@@ -85246,14 +85247,28 @@ async function rerunFailedJobs(octokit, owner, repo, runId) {
         run_id: runId,
     });
 }
-/** Best-effort 🚀 reaction on the approval comment so the commenter sees it landed. */
+/** Receipt posted (and later updated with the outcome) when an approval command is processed. */
+function approvalReceivedBody(user, commandBody, runUrls) {
+    const tokens = commandBody.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
+    const what = tokens.length ? tokens.map((t) => `\`${t}\``).join(' ') : '(nothing parseable)';
+    const lines = [`### 🔁 Approval received`, '', `@${user} requested approval for: ${what}`, ''];
+    if (runUrls.length > 0) {
+        lines.push(`Rerunning the visual check now: ${runUrls.map((u, i) => `[run ${i + 1}](${u})`).join(' · ')}.`, '', '_This comment updates with the result when the check completes._');
+    }
+    else {
+        lines.push('No failed visual check found for this PR head — nothing to rerun. ' +
+            'If the check is currently running, the approvals will be picked up when it next executes.');
+    }
+    return lines.join('\n');
+}
+/** Best-effort 👀 reaction on the approval comment so the commenter sees it landed. */
 async function reactToComment(octokit, owner, repo, commentId) {
     try {
         await octokit.request('POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions', {
             owner,
             repo,
             comment_id: commentId,
-            content: 'rocket',
+            content: 'eyes',
         });
     }
     catch (err) {
@@ -85397,9 +85412,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.COMMENT_MARKER = void 0;
+exports.STATUS_MARKER = exports.COMMENT_MARKER = void 0;
 exports.commentMarker = commentMarker;
 exports.listPrComments = listPrComments;
+exports.upsertMarkedComment = upsertMarkedComment;
 exports.upsertStickyComment = upsertStickyComment;
 const core = __importStar(__nccwpck_require__(37484));
 exports.COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
@@ -85429,21 +85445,35 @@ async function listPrComments(octokit, owner, repo, prNumber) {
     }
     return out;
 }
-async function upsertStickyComment(octokit, owner, repo, prNumber, body, key) {
-    const marker = commentMarker(key);
+/** Marker for the approval-status comment that narrates the approve → rerun → outcome loop. */
+exports.STATUS_MARKER = '<!-- fiestaboard/visual-regression-action:approval-status -->';
+/**
+ * Creates or updates the single comment carrying `marker`. With
+ * createIfMissing=false it only updates an existing comment. Errors are
+ * swallowed with a warning (fork PRs / missing permission). Returns true
+ * when a comment was written.
+ */
+async function upsertMarkedComment(octokit, owner, repo, prNumber, marker, body, createIfMissing = true) {
     const full = `${marker}\n${body}`;
     try {
         const existing = await findMarkedComment(octokit, owner, repo, prNumber, marker);
         if (existing) {
             await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: full });
+            return true;
         }
-        else {
+        if (createIfMissing) {
             await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: full });
+            return true;
         }
+        return false;
     }
     catch (err) {
         core.warning(`Could not post PR comment (fork PR or missing pull-requests: write permission): ${err}`);
+        return false;
     }
+}
+async function upsertStickyComment(octokit, owner, repo, prNumber, body, key) {
+    await upsertMarkedComment(octokit, owner, repo, prNumber, commentMarker(key), body);
 }
 
 
@@ -85769,6 +85799,8 @@ async function run() {
     }
     if (comment && prNumber) {
         await (0, comment_1.upsertStickyComment)(octokit, owner, repo, prNumber, md, key);
+        // Close the loop on the approval-status comment, if an approve run opened one.
+        await (0, comment_1.upsertMarkedComment)(octokit, owner, repo, prNumber, comment_1.STATUS_MARKER, (0, report_1.approvalOutcomeBody)(summary, meta), false);
     }
     core.setOutput('changed', String(summary.changed));
     core.setOutput('added', String(summary.added));
@@ -85820,16 +85852,18 @@ async function runApproveMode(token, owner, repo) {
     const octokit = github.getOctokit(token);
     const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
     const runs = await (0, approve_1.findVrtRunsToRerun)(octokit, owner, repo, pr.head.sha);
-    if (runs.length === 0) {
-        core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
-        return;
-    }
+    const runUrls = [];
     for (const runId of runs) {
         await (0, approve_1.rerunFailedJobs)(octokit, owner, repo, runId);
+        runUrls.push(`https://github.com/${owner}/${repo}/actions/runs/${runId}`);
         core.info(`Rerunning failed jobs of run ${runId} to re-evaluate approvals.`);
     }
+    if (runs.length === 0)
+        core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
     if (commentId)
         await (0, approve_1.reactToComment)(octokit, owner, repo, commentId);
+    const user = ctx.payload.comment?.user?.login ?? 'someone';
+    await (0, comment_1.upsertMarkedComment)(octokit, owner, repo, prNumber, comment_1.STATUS_MARKER, (0, approve_1.approvalReceivedBody)(user, commentBody, runUrls));
 }
 run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
 
@@ -85874,6 +85908,7 @@ function resolveMode(modeInput, eventName, ref, defaultBranch) {
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.generateMarkdownSummary = generateMarkdownSummary;
+exports.approvalOutcomeBody = approvalOutcomeBody;
 exports.generateHtmlReport = generateHtmlReport;
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const escPipe = (s) => s.replace(/\|/g, '\\|');
@@ -85950,6 +85985,32 @@ function generateMarkdownSummary(summary, meta) {
     if (meta.baselineRunUrl)
         lines.push('', `Baseline from [this run](${meta.baselineRunUrl}) · commit \`${meta.sha.slice(0, 7)}\``);
     return lines.join('\n');
+}
+/**
+ * Outcome text for the approval-status comment, written by the compare run
+ * that follows an approval. Null when there is nothing meaningful to say.
+ */
+function approvalOutcomeBody(summary, meta) {
+    const needing = summary.changed + summary.removed;
+    const approved = summary.results.filter((r) => r.approved).length;
+    const run = `[visual check](${meta.runUrl})`;
+    if (needing === 0) {
+        return `### ✅ Check passed\n\nNo visual changes needed approval on the latest run — the ${run} passed.`;
+    }
+    if (approved === needing) {
+        return `### ✅ Approvals applied\n\nAll ${needing} visual change(s) approved — the ${run} passed. Merging publishes the new baselines.`;
+    }
+    if (approved > 0) {
+        const missing = summary.results
+            .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
+            .map((r) => `\`${r.name}\``)
+            .slice(0, 10)
+            .join(', ');
+        return (`### ⚠️ Approvals partially applied\n\n${approved} of ${needing} visual change(s) approved; still needing review: ${missing}. ` +
+            `The ${run} stays red — copy a fresh command from the report comment above.`);
+    }
+    return (`### ❌ No approvals matched\n\nThe ${run} re-ran, but no posted approval matched — pins go stale when new commits are pushed. ` +
+        'Copy a fresh command from the report comment above.');
 }
 // Each PNG is embedded exactly once: the side-by-side thumbnails carry the
 // baseline/current/diff data URIs, the overlay carries the mask. Every other
@@ -86140,6 +86201,8 @@ function generateHtmlReport(summary, meta) {
     border-top:2px solid var(--hot); box-shadow:0 -4px 16px rgba(0,0,0,.15) }
   .cmdbar[hidden] { display:none }
   .cmdbar.partial { border-top-color:var(--warn) }
+  .cmdbar.complete { border-top-color:var(--unchanged) }
+  .cmdbar.complete .coverage { color:var(--unchanged); font-weight:600 }
   .cmdbar .coverage { font-size:13px; color:var(--muted); flex:1 1 100% }
   .cmdbar.partial .coverage { color:var(--warn); font-weight:600 }
   .cmdbar input { flex:1 1 320px; min-width:0; font:13px ui-monospace,Menlo,monospace;
@@ -86301,22 +86364,32 @@ ${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
       if (decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
       if (decisions[i] === false) rejected++;
     });
-    cmdbar.hidden = entries.length === 0;
-    if (!entries.length) return;
-    cmdInput.value = '/vrt approve ' + entries.join(' ');
-    var unreviewed = total - entries.length - rejected;
+    cmdbar.hidden = total === 0;
+    if (total === 0) return;
     var cov = cmdbar.querySelector('.coverage');
-    if (unreviewed > 0) {
+    var copyBtn = cmdbar.querySelector('.copy');
+    cmdInput.hidden = entries.length === 0;
+    copyBtn.hidden = entries.length === 0;
+    cmdbar.classList.remove('partial', 'complete');
+    var unreviewed = total - entries.length - rejected;
+    if (entries.length === 0 && rejected === 0) {
+      cov.textContent = '1. Review each change (A approve / R reject) · 2. Copy the command that assembles here · 3. Post it as a PR comment';
+    } else if (entries.length === 0) {
+      cov.textContent = rejected + ' rejected · 0 approved — nothing to post. Fix the rejected changes and push, or approve the intentional ones.';
+      cmdbar.classList.add('partial');
+    } else if (unreviewed > 0) {
       cov.textContent = '⚠️ Covers ' + entries.length + ' of ' + total + ' — ' + unreviewed +
         ' still unreviewed. The check stays red until every changed/removed screenshot is approved.';
       cmdbar.classList.add('partial');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     } else if (rejected > 0) {
       cov.textContent = 'Covers ' + entries.length + ' of ' + total + ' — ' + rejected +
         ' rejected (check stays red until those are fixed). Post as a PR comment:';
-      cmdbar.classList.remove('partial');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     } else {
-      cov.textContent = 'Covers all ' + total + ' changes — post as a PR comment and the check will pass:';
-      cmdbar.classList.remove('partial');
+      cov.textContent = '✅ Covers all ' + total + ' changes — post as a PR comment and the check will pass:';
+      cmdbar.classList.add('complete');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     }
   }
   function vote(v) {
@@ -86423,6 +86496,7 @@ ${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
     });
   });
   zoomWrap.addEventListener('dblclick', resetZoom);
+  updateCmdbar();
   document.addEventListener('keydown', function (e) {
     if (lb.hidden) return;
     if (e.key === 'Escape') close();

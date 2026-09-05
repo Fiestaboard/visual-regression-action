@@ -53,7 +53,27 @@ export async function rerunFailedJobs(octokit: ApproveOctokit, owner: string, re
   });
 }
 
-/** Best-effort 🚀 reaction on the approval comment so the commenter sees it landed. */
+/** Receipt posted (and later updated with the outcome) when an approval command is processed. */
+export function approvalReceivedBody(user: string, commandBody: string, runUrls: string[]): string {
+  const tokens = commandBody.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
+  const what = tokens.length ? tokens.map((t) => `\`${t}\``).join(' ') : '(nothing parseable)';
+  const lines = [`### 🔁 Approval received`, '', `@${user} requested approval for: ${what}`, ''];
+  if (runUrls.length > 0) {
+    lines.push(
+      `Rerunning the visual check now: ${runUrls.map((u, i) => `[run ${i + 1}](${u})`).join(' · ')}.`,
+      '',
+      '_This comment updates with the result when the check completes._'
+    );
+  } else {
+    lines.push(
+      'No failed visual check found for this PR head — nothing to rerun. ' +
+        'If the check is currently running, the approvals will be picked up when it next executes.'
+    );
+  }
+  return lines.join('\n');
+}
+
+/** Best-effort 👀 reaction on the approval comment so the commenter sees it landed. */
 export async function reactToComment(
   octokit: ApproveOctokit,
   owner: string,
@@ -65,7 +85,7 @@ export async function reactToComment(
       owner,
       repo,
       comment_id: commentId,
-      content: 'rocket',
+      content: 'eyes',
     });
   } catch (err) {
     core.warning(`Could not react to the approval comment: ${err instanceof Error ? err.message : String(err)}`);

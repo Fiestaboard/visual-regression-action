@@ -122,6 +122,37 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
   return lines.join('\n');
 }
 
+/**
+ * Outcome text for the approval-status comment, written by the compare run
+ * that follows an approval. Null when there is nothing meaningful to say.
+ */
+export function approvalOutcomeBody(summary: CompareSummary, meta: ReportMeta): string {
+  const needing = summary.changed + summary.removed;
+  const approved = summary.results.filter((r) => r.approved).length;
+  const run = `[visual check](${meta.runUrl})`;
+  if (needing === 0) {
+    return `### ✅ Check passed\n\nNo visual changes needed approval on the latest run — the ${run} passed.`;
+  }
+  if (approved === needing) {
+    return `### ✅ Approvals applied\n\nAll ${needing} visual change(s) approved — the ${run} passed. Merging publishes the new baselines.`;
+  }
+  if (approved > 0) {
+    const missing = summary.results
+      .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
+      .map((r) => `\`${r.name}\``)
+      .slice(0, 10)
+      .join(', ');
+    return (
+      `### ⚠️ Approvals partially applied\n\n${approved} of ${needing} visual change(s) approved; still needing review: ${missing}. ` +
+      `The ${run} stays red — copy a fresh command from the report comment above.`
+    );
+  }
+  return (
+    `### ❌ No approvals matched\n\nThe ${run} re-ran, but no posted approval matched — pins go stale when new commits are pushed. ` +
+    'Copy a fresh command from the report comment above.'
+  );
+}
+
 // Each PNG is embedded exactly once: the side-by-side thumbnails carry the
 // baseline/current/diff data URIs, the overlay carries the mask. Every other
 // <img> (swipe views, the fullscreen reviewer) is populated at load by
@@ -316,6 +347,8 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
     border-top:2px solid var(--hot); box-shadow:0 -4px 16px rgba(0,0,0,.15) }
   .cmdbar[hidden] { display:none }
   .cmdbar.partial { border-top-color:var(--warn) }
+  .cmdbar.complete { border-top-color:var(--unchanged) }
+  .cmdbar.complete .coverage { color:var(--unchanged); font-weight:600 }
   .cmdbar .coverage { font-size:13px; color:var(--muted); flex:1 1 100% }
   .cmdbar.partial .coverage { color:var(--warn); font-weight:600 }
   .cmdbar input { flex:1 1 320px; min-width:0; font:13px ui-monospace,Menlo,monospace;
@@ -482,22 +515,32 @@ ${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
       if (decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
       if (decisions[i] === false) rejected++;
     });
-    cmdbar.hidden = entries.length === 0;
-    if (!entries.length) return;
-    cmdInput.value = '/vrt approve ' + entries.join(' ');
-    var unreviewed = total - entries.length - rejected;
+    cmdbar.hidden = total === 0;
+    if (total === 0) return;
     var cov = cmdbar.querySelector('.coverage');
-    if (unreviewed > 0) {
+    var copyBtn = cmdbar.querySelector('.copy');
+    cmdInput.hidden = entries.length === 0;
+    copyBtn.hidden = entries.length === 0;
+    cmdbar.classList.remove('partial', 'complete');
+    var unreviewed = total - entries.length - rejected;
+    if (entries.length === 0 && rejected === 0) {
+      cov.textContent = '1. Review each change (A approve / R reject) · 2. Copy the command that assembles here · 3. Post it as a PR comment';
+    } else if (entries.length === 0) {
+      cov.textContent = rejected + ' rejected · 0 approved — nothing to post. Fix the rejected changes and push, or approve the intentional ones.';
+      cmdbar.classList.add('partial');
+    } else if (unreviewed > 0) {
       cov.textContent = '⚠️ Covers ' + entries.length + ' of ' + total + ' — ' + unreviewed +
         ' still unreviewed. The check stays red until every changed/removed screenshot is approved.';
       cmdbar.classList.add('partial');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     } else if (rejected > 0) {
       cov.textContent = 'Covers ' + entries.length + ' of ' + total + ' — ' + rejected +
         ' rejected (check stays red until those are fixed). Post as a PR comment:';
-      cmdbar.classList.remove('partial');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     } else {
-      cov.textContent = 'Covers all ' + total + ' changes — post as a PR comment and the check will pass:';
-      cmdbar.classList.remove('partial');
+      cov.textContent = '✅ Covers all ' + total + ' changes — post as a PR comment and the check will pass:';
+      cmdbar.classList.add('complete');
+      cmdInput.value = '/vrt approve ' + entries.join(' ');
     }
   }
   function vote(v) {
@@ -604,6 +647,7 @@ ${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
     });
   });
   zoomWrap.addEventListener('dblclick', resetZoom);
+  updateCmdbar();
   document.addEventListener('keydown', function (e) {
     if (lb.hidden) return;
     if (e.key === 'Escape') close();

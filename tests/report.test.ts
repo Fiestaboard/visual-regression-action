@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateHtmlReport, generateMarkdownSummary, ReportMeta } from '../src/report';
+import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from '../src/report';
 import { CompareSummary } from '../src/types';
 
 const meta: ReportMeta = {
@@ -124,6 +124,36 @@ describe('generateMarkdownSummary', () => {
   });
 });
 
+describe('approvalOutcomeBody', () => {
+
+  it('celebrates full approval with a pass message', () => {
+    const s = summary();
+    for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
+    const body = approvalOutcomeBody(s, meta);
+    expect(body).toContain('✅ Approvals applied');
+    expect(body).toContain('passed');
+  });
+
+  it('reports partial approval with the missing names', () => {
+    const s = summary();
+    s.results[3].approved = true; // home.png only
+    const body = approvalOutcomeBody(s, meta);
+    expect(body).toContain('⚠️ Approvals partially applied');
+    expect(body).toContain('`old.png`');
+  });
+
+  it('explains when nothing matched', () => {
+    const body = approvalOutcomeBody(summary(), meta);
+    expect(body).toContain('❌ No approvals matched');
+    expect(body).toContain('stale');
+  });
+
+  it('reports a clean pass when nothing needed approval', () => {
+    const s: CompareSummary = { results: [], changed: 0, added: 0, removed: 0, unchanged: 3, hasChanges: false };
+    expect(approvalOutcomeBody(s, meta)).toContain('✅ Check passed');
+  });
+});
+
 describe('generateHtmlReport', () => {
   it('inlines images as data URIs and lists every screenshot', () => {
     const html = generateHtmlReport(summary(), meta);
@@ -179,11 +209,13 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('Review 3 changes');
   });
 
-  it('command bar tracks coverage so partial approvals are visible before posting', () => {
+  it('command bar guides the reviewer through all states', () => {
     const html = generateHtmlReport(summary(), meta);
     expect(html).toContain('class="coverage"');
     expect(html).toContain('updateCmdbar');
-    expect(html).toContain('still unreviewed');
+    expect(html).toContain('assembles here'); // pre-review guidance
+    expect(html).toContain('still unreviewed'); // partial state
+    expect(html).toContain('post as a PR comment and the check will pass'); // complete state
   });
 
   it('reviewer has visible prev/next buttons, kbd hints, and selection disabled on drag surfaces', () => {

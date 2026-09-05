@@ -86,7 +86,7 @@ An intentional visual change leaves the check red — and if the check is requir
 
 1. Open the report and hit **Review changes**. Approve (`A`) or reject (`R`) each screenshot as you step through.
 2. The report assembles a command as you go, e.g. `/vrt approve home.png@1a2b3c4d5e6f old.png@9f8e7d6c5b4a` — each entry pins a hash of that screenshot's exact pixels. Copy it.
-3. Post it as a comment on the PR. If you've added the [approvals workflow](examples/vrt-approvals.yml), the failed check reruns automatically (the comment gets a 🚀 when the rerun kicks off); otherwise hit "Re-run failed jobs" yourself.
+3. Post it as a comment on the PR. If you've added the [approvals workflow](examples/vrt-approvals.yml), the failed check reruns automatically (the comment gets a 👀 when the rerun kicks off); otherwise hit "Re-run failed jobs" yourself.
 4. On the rerun, the action reads the PR's comments, honors approvals whose hashes still match, and passes when every changed/removed screenshot is approved. Approved items stay visible in the report and comment, marked ✅.
 
 Details worth knowing:

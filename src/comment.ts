@@ -56,6 +56,42 @@ export async function listPrComments(
   return out;
 }
 
+/** Marker for the approval-status comment that narrates the approve → rerun → outcome loop. */
+export const STATUS_MARKER = '<!-- fiestaboard/visual-regression-action:approval-status -->';
+
+/**
+ * Creates or updates the single comment carrying `marker`. With
+ * createIfMissing=false it only updates an existing comment. Errors are
+ * swallowed with a warning (fork PRs / missing permission). Returns true
+ * when a comment was written.
+ */
+export async function upsertMarkedComment(
+  octokit: MinimalOctokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  marker: string,
+  body: string,
+  createIfMissing = true
+): Promise<boolean> {
+  const full = `${marker}\n${body}`;
+  try {
+    const existing = await findMarkedComment(octokit, owner, repo, prNumber, marker);
+    if (existing) {
+      await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: full });
+      return true;
+    }
+    if (createIfMissing) {
+      await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: full });
+      return true;
+    }
+    return false;
+  } catch (err) {
+    core.warning(`Could not post PR comment (fork PR or missing pull-requests: write permission): ${err}`);
+    return false;
+  }
+}
+
 export async function upsertStickyComment(
   octokit: MinimalOctokit,
   owner: string,
@@ -64,16 +100,5 @@ export async function upsertStickyComment(
   body: string,
   key: string
 ): Promise<void> {
-  const marker = commentMarker(key);
-  const full = `${marker}\n${body}`;
-  try {
-    const existing = await findMarkedComment(octokit, owner, repo, prNumber, marker);
-    if (existing) {
-      await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: full });
-    } else {
-      await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: full });
-    }
-  } catch (err) {
-    core.warning(`Could not post PR comment (fork PR or missing pull-requests: write permission): ${err}`);
-  }
+  await upsertMarkedComment(octokit, owner, repo, prNumber, commentMarker(key), body);
 }
