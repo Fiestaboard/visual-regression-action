@@ -1,0 +1,59 @@
+name: 'Visual Regression Action'
+description: >-
+  Visual regression testing with artifact-based baselines: diff PR screenshots
+  against the default branch's build artifacts and get an HTML report + sticky
+  PR comment. No screenshots committed to git.
+author: 'Fiestaboard'
+branding:
+  icon: 'eye'
+  color: 'purple'
+
+inputs:
+  screenshots-dir:
+    description: 'Directory containing the captured PNG screenshots'
+    required: true
+  github-token:
+    description: 'Token used to look up/download baseline artifacts and post the PR comment'
+    default: ${{ github.token }}
+  mode:
+    description: 'auto | baseline | compare. auto = pull requests compare, pushes to the default branch publish baselines'
+    default: 'auto'
+  key:
+    description: 'Optional suffix for artifact names — use for matrix builds or multiple apps in one repo'
+    default: ''
+  threshold:
+    description: 'Per-pixel color sensitivity passed to pixelmatch (0-1, smaller = more sensitive)'
+    default: '0.1'
+  diff-ratio:
+    description: 'Fraction of differing pixels (0-1) above which an image counts as changed'
+    default: '0'
+  fail-on-diff:
+    description: 'Fail the job when screenshots changed or were removed'
+    default: 'true'
+  comment:
+    description: 'Post/update a sticky PR comment with the results'
+    default: 'true'
+  baseline-branch:
+    description: 'Branch whose baseline artifact to compare against. Defaults to the PR base branch (or the default branch)'
+    default: ''
+  retention-days:
+    description: 'Artifact retention override in days (empty = repo default)'
+    default: ''
+
+outputs:
+  changed:
+    description: 'Number of changed screenshots'
+  added:
+    description: 'Number of added screenshots'
+  removed:
+    description: 'Number of removed screenshots'
+  unchanged:
+    description: 'Number of unchanged screenshots'
+  has-changes:
+    description: 'true when changed + removed > 0'
+  report-path:
+    description: 'Local path of the generated HTML report'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
