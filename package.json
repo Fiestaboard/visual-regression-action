@@ -1,6 +1,6 @@
 {
   "name": "visual-regression-action",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "description": "Visual regression testing for GitHub Actions with artifact-based baselines — no screenshots in git",
   "main": "dist/index.js",
@@ -19,7 +19,7 @@
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.0",
+    "@types/node": "^24.13.3",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
     "@vercel/ncc": "^0.38.3",

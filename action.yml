@@ -60,5 +60,5 @@ outputs:
     description: 'Local path of the generated HTML report'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'
