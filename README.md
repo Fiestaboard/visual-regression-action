@@ -113,6 +113,7 @@ jobs:
       contents: read
       actions: write        # rerun the failed visual check
       issues: write         # rocket reaction on the approval comment
+      pull-requests: write  # (reactions on PR comments use this scope too)
     steps:
       - uses: fiestaboard/visual-regression-action@v1
         with:
