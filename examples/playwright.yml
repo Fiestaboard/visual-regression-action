@@ -1,0 +1,64 @@
+name: Visual tests (Playwright)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read        # download baseline artifacts from other runs
+  pull-requests: write # sticky results comment
+
+jobs:
+  vrt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      # --- capture: replace with your own screenshot script ---
+      # Anything that writes PNGs into ./screenshots works; this is one way
+      # to do it with a plain Playwright script (e.g. scripts/capture.js):
+      #
+      #   const { chromium } = require('playwright');
+      #   const fs = require('fs');
+      #
+      #   const pages = [
+      #     { name: 'home', url: 'http://localhost:3000/' },
+      #     { name: 'pricing', url: 'http://localhost:3000/pricing' },
+      #   ];
+      #
+      #   (async () => {
+      #     fs.mkdirSync('screenshots', { recursive: true });
+      #     const browser = await chromium.launch();
+      #     const page = await browser.newPage();
+      #     for (const { name, url } of pages) {
+      #       await page.goto(url, { waitUntil: 'networkidle' });
+      #       await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
+      #     }
+      #     await browser.close();
+      #   })();
+      - name: Build app
+        run: npm run build
+
+      - name: Start app
+        run: npm run start &
+
+      - name: Wait for app
+        run: npx wait-on http://localhost:3000
+
+      - name: Capture screenshots
+        run: node scripts/capture.js
+      # --- end capture ---
+
+      - uses: fiestaboard/visual-regression-action@v1
+        with:
+          screenshots-dir: ./screenshots

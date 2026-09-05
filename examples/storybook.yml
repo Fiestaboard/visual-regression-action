@@ -1,0 +1,68 @@
+name: Visual tests (Storybook)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read        # download baseline artifacts from other runs
+  pull-requests: write # sticky results comment
+
+jobs:
+  vrt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run build-storybook
+
+      # --- capture: replace with your own capture tool ---
+      # Any approach that ends with PNGs in ./screenshots works. One way:
+      # serve the static Storybook build and walk stories.json with a small
+      # Playwright script (e.g. scripts/capture-storybook.js):
+      #
+      #   const { chromium } = require('playwright');
+      #   const fs = require('fs');
+      #
+      #   (async () => {
+      #     const index = JSON.parse(
+      #       fs.readFileSync('storybook-static/index.json', 'utf8')
+      #     );
+      #     const stories = Object.values(index.entries ?? index.stories)
+      #       .filter((e) => e.type === 'story');
+      #
+      #     fs.mkdirSync('screenshots', { recursive: true });
+      #     const browser = await chromium.launch();
+      #     const page = await browser.newPage();
+      #     for (const story of stories) {
+      #       const url =
+      #         `http://localhost:6006/iframe.html?id=${story.id}&viewMode=story`;
+      #       await page.goto(url, { waitUntil: 'networkidle' });
+      #       await page.screenshot({ path: `screenshots/${story.id}.png` });
+      #     }
+      #     await browser.close();
+      #   })();
+      - name: Serve Storybook build
+        run: npx http-server storybook-static -p 6006 &
+
+      - name: Wait for Storybook
+        run: npx wait-on http://localhost:6006
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture story screenshots
+        run: node scripts/capture-storybook.js
+      # --- end capture ---
+
+      - uses: fiestaboard/visual-regression-action@v1
+        with:
+          screenshots-dir: ./screenshots
