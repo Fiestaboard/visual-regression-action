@@ -85151,15 +85151,21 @@ function baselineArtifactName(key) {
 function reportArtifactName(key) {
     return key ? `vrt-report-${key}` : 'vrt-report';
 }
+const MAX_ARTIFACT_PAGES = 10;
 async function findBaselineArtifact(octokit, owner, repo, name, branch) {
-    const { data } = await octokit.rest.actions.listArtifactsForRepo({ owner, repo, name, per_page: 100 });
-    const match = data.artifacts
-        .filter((a) => a.name === name && !a.expired && a.workflow_run?.head_branch === branch && a.workflow_run?.id)
-        .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
-    if (!match)
-        return null;
-    const runId = match.workflow_run.id;
-    return { artifactId: match.id, runId, runUrl: `https://github.com/${owner}/${repo}/actions/runs/${runId}` };
+    for (let page = 1; page <= MAX_ARTIFACT_PAGES; page++) {
+        const { data } = await octokit.rest.actions.listArtifactsForRepo({ owner, repo, name, per_page: 100, page });
+        const match = data.artifacts
+            .filter((a) => a.name === name && !a.expired && a.workflow_run?.head_branch === branch && a.workflow_run?.id)
+            .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
+        if (match) {
+            const runId = match.workflow_run.id;
+            return { artifactId: match.id, runId, runUrl: `https://github.com/${owner}/${repo}/actions/runs/${runId}` };
+        }
+        if (data.artifacts.length < 100)
+            return null;
+    }
+    return null;
 }
 async function downloadBaselineArtifact(ref, owner, repo, token, destDir) {
     const client = new artifact_1.DefaultArtifactClient();
@@ -85223,14 +85229,30 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.COMMENT_MARKER = void 0;
+exports.commentMarker = commentMarker;
 exports.upsertStickyComment = upsertStickyComment;
 const core = __importStar(__nccwpck_require__(37484));
 exports.COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
-async function upsertStickyComment(octokit, owner, repo, prNumber, body) {
-    const full = `${exports.COMMENT_MARKER}\n${body}`;
+function commentMarker(key) {
+    return key ? `<!-- fiestaboard/visual-regression-action:${key} -->` : exports.COMMENT_MARKER;
+}
+const MAX_COMMENT_PAGES = 10;
+async function findMarkedComment(octokit, owner, repo, prNumber, marker) {
+    for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+        const existing = data.find((c) => c.body?.includes(marker));
+        if (existing)
+            return existing;
+        if (data.length < 100)
+            return undefined;
+    }
+    return undefined;
+}
+async function upsertStickyComment(octokit, owner, repo, prNumber, body, key) {
+    const marker = commentMarker(key);
+    const full = `${marker}\n${body}`;
     try {
-        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 });
-        const existing = data.find((c) => c.body?.includes(exports.COMMENT_MARKER));
+        const existing = await findMarkedComment(octokit, owner, repo, prNumber, marker);
         if (existing) {
             await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: full });
         }
@@ -85423,10 +85445,14 @@ const diff_1 = __nccwpck_require__(19952);
 const report_1 = __nccwpck_require__(70665);
 const comment_1 = __nccwpck_require__(62246);
 const baseline_1 = __nccwpck_require__(89860);
+const KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 async function run() {
     const screenshotsDir = core.getInput('screenshots-dir', { required: true });
     const token = core.getInput('github-token', { required: true });
     const key = core.getInput('key');
+    if (key && !KEY_PATTERN.test(key)) {
+        throw new Error(`Invalid key "${key}" — use only letters, digits, ".", "_", "-".`);
+    }
     const thresholdRaw = core.getInput('threshold') || '0.1';
     const threshold = parseFloat(thresholdRaw);
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
@@ -85440,7 +85466,11 @@ async function run() {
     const failOnDiff = core.getBooleanInput('fail-on-diff');
     const comment = core.getBooleanInput('comment');
     const retentionInput = core.getInput('retention-days');
-    const retentionDays = retentionInput ? parseInt(retentionInput, 10) : undefined;
+    let retentionDays = retentionInput ? parseInt(retentionInput, 10) : undefined;
+    if (retentionInput && (!Number.isFinite(retentionDays) || retentionDays < 1)) {
+        core.warning(`Invalid retention-days "${retentionInput}" — ignoring it and using the repo default.`);
+        retentionDays = undefined;
+    }
     const ctx = github.context;
     const { owner, repo } = ctx.repo;
     const defaultBranch = ctx.payload.repository?.default_branch ?? 'main';
@@ -85479,15 +85509,25 @@ async function run() {
         sha: ctx.payload.pull_request?.head?.sha ?? ctx.sha,
         baselineRunUrl: ref?.runUrl,
         missingBaseline: !ref,
+        reportArtifactName: (0, baseline_1.reportArtifactName)(key),
     };
-    const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
-    const reportPath = path.join(reportDir, 'index.html');
-    fs.writeFileSync(reportPath, (0, report_1.generateHtmlReport)(summary, meta));
+    let reportPath = '';
     try {
-        await (0, baseline_1.uploadFileAsArtifact)((0, baseline_1.reportArtifactName)(key), reportPath, retentionDays);
+        const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
+        reportPath = path.join(reportDir, 'index.html');
+        fs.writeFileSync(reportPath, (0, report_1.generateHtmlReport)(summary, meta));
     }
     catch (err) {
-        core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
+        core.warning(`Could not generate HTML report: ${err instanceof Error ? err.message : String(err)}`);
+        reportPath = '';
+    }
+    if (reportPath) {
+        try {
+            await (0, baseline_1.uploadFileAsArtifact)((0, baseline_1.reportArtifactName)(key), reportPath, retentionDays);
+        }
+        catch (err) {
+            core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
     const md = (0, report_1.generateMarkdownSummary)(summary, meta);
     try {
@@ -85498,7 +85538,7 @@ async function run() {
     }
     const prNumber = ctx.payload.pull_request?.number;
     if (comment && prNumber) {
-        await (0, comment_1.upsertStickyComment)(octokit, owner, repo, prNumber, md);
+        await (0, comment_1.upsertStickyComment)(octokit, owner, repo, prNumber, md, key);
     }
     core.setOutput('changed', String(summary.changed));
     core.setOutput('added', String(summary.added));
@@ -85551,6 +85591,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.generateMarkdownSummary = generateMarkdownSummary;
 exports.generateHtmlReport = generateHtmlReport;
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const escPipe = (s) => s.replace(/\|/g, '\\|');
 const pct = (ratio) => `${(ratio * 100).toFixed(2)}%`;
 const dataUri = (buf) => buf ? `data:image/png;base64,${buf.toString('base64')}` : '';
 const STATUS_LABEL = {
@@ -85576,14 +85617,14 @@ function generateMarkdownSummary(summary, meta) {
         lines.push('| Status | Screenshot | Diff |', '|---|---|---|');
         for (const r of notable) {
             const diff = r.status === 'changed' ? pct(r.diffRatio) : '—';
-            lines.push(`| ${STATUS_LABEL[r.status]} | \`${r.name}\` | ${diff} |`);
+            lines.push(`| ${STATUS_LABEL[r.status]} | \`${escPipe(r.name)}\` | ${diff} |`);
         }
         const hidden = summary.results.filter((r) => r.status !== 'unchanged').length - notable.length;
         if (hidden > 0)
             lines.push('', `…and ${hidden} more.`);
         lines.push('');
     }
-    lines.push(`📦 [Download the full visual report](${meta.runUrl}) (run artifact \`vrt-report\`)`);
+    lines.push(`📦 [Download the full visual report](${meta.runUrl}) (run artifact \`${meta.reportArtifactName}\`)`);
     if (meta.baselineRunUrl)
         lines.push('', `Baseline from [this run](${meta.baselineRunUrl}) · commit \`${meta.sha.slice(0, 7)}\``);
     return lines.join('\n');
@@ -85592,15 +85633,15 @@ function card(r) {
     const imgs = r.status === 'changed'
         ? `
     <div class="compare" style="--split:50%">
-      <div class="pane"><h4>Baseline</h4><img src="${dataUri(r.baselinePng)}" alt="baseline"></div>
-      <div class="pane"><h4>Current</h4><img src="${dataUri(r.currentPng)}" alt="current"></div>
+      <div class="pane"><h4>Baseline</h4><img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline"></div>
+      <div class="pane"><h4>Current</h4><img class="shot-current" src="${dataUri(r.currentPng)}" alt="current"></div>
       <div class="pane"><h4>Diff (${pct(r.diffRatio)})</h4><img src="${dataUri(r.diffPng)}" alt="diff"></div>
     </div>
     <div class="slider">
       <h4>Swipe</h4>
       <div class="overlay">
-        <img class="under" src="${dataUri(r.baselinePng)}" alt="baseline">
-        <img class="over" src="${dataUri(r.currentPng)}" alt="current">
+        <img class="under" alt="baseline">
+        <img class="over" alt="current">
       </div>
       <input type="range" min="0" max="100" value="50" oninput="this.closest('.card').querySelector('.over').style.clipPath = 'inset(0 ' + (100 - this.value) + '% 0 0)'">
     </div>`
@@ -85688,6 +85729,16 @@ function toggle(btn) {
   for (const card of document.querySelectorAll('.card[data-status="' + btn.dataset.status + '"]')) {
     card.classList.toggle('hidden', !on);
   }
+}
+// Swipe-slider overlay images reuse the pane images' already-embedded data URIs
+// instead of re-embedding each PNG a second time in the document.
+for (const card of document.querySelectorAll('.card[data-status="changed"]')) {
+  const baseline = card.querySelector('.shot-baseline');
+  const current = card.querySelector('.shot-current');
+  const under = card.querySelector('.overlay .under');
+  const over = card.querySelector('.overlay .over');
+  if (baseline && under) under.src = baseline.src;
+  if (current && over) over.src = current.src;
 }
 </script>
 </body>

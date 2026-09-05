@@ -6,10 +6,13 @@ export interface ReportMeta {
   sha: string;
   baselineRunUrl?: string;
   missingBaseline: boolean;
+  reportArtifactName: string;
 }
 
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const escPipe = (s: string): string => s.replace(/\|/g, '\\|');
 
 const pct = (ratio: number): string => `${(ratio * 100).toFixed(2)}%`;
 
@@ -46,14 +49,14 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
     lines.push('| Status | Screenshot | Diff |', '|---|---|---|');
     for (const r of notable) {
       const diff = r.status === 'changed' ? pct(r.diffRatio) : '—';
-      lines.push(`| ${STATUS_LABEL[r.status]} | \`${r.name}\` | ${diff} |`);
+      lines.push(`| ${STATUS_LABEL[r.status]} | \`${escPipe(r.name)}\` | ${diff} |`);
     }
     const hidden = summary.results.filter((r) => r.status !== 'unchanged').length - notable.length;
     if (hidden > 0) lines.push('', `…and ${hidden} more.`);
     lines.push('');
   }
 
-  lines.push(`📦 [Download the full visual report](${meta.runUrl}) (run artifact \`vrt-report\`)`);
+  lines.push(`📦 [Download the full visual report](${meta.runUrl}) (run artifact \`${meta.reportArtifactName}\`)`);
   if (meta.baselineRunUrl) lines.push('', `Baseline from [this run](${meta.baselineRunUrl}) · commit \`${meta.sha.slice(0, 7)}\``);
   return lines.join('\n');
 }
@@ -63,15 +66,15 @@ function card(r: ScreenshotResult): string {
     r.status === 'changed'
       ? `
     <div class="compare" style="--split:50%">
-      <div class="pane"><h4>Baseline</h4><img src="${dataUri(r.baselinePng)}" alt="baseline"></div>
-      <div class="pane"><h4>Current</h4><img src="${dataUri(r.currentPng)}" alt="current"></div>
+      <div class="pane"><h4>Baseline</h4><img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline"></div>
+      <div class="pane"><h4>Current</h4><img class="shot-current" src="${dataUri(r.currentPng)}" alt="current"></div>
       <div class="pane"><h4>Diff (${pct(r.diffRatio)})</h4><img src="${dataUri(r.diffPng)}" alt="diff"></div>
     </div>
     <div class="slider">
       <h4>Swipe</h4>
       <div class="overlay">
-        <img class="under" src="${dataUri(r.baselinePng)}" alt="baseline">
-        <img class="over" src="${dataUri(r.currentPng)}" alt="current">
+        <img class="under" alt="baseline">
+        <img class="over" alt="current">
       </div>
       <input type="range" min="0" max="100" value="50" oninput="this.closest('.card').querySelector('.over').style.clipPath = 'inset(0 ' + (100 - this.value) + '% 0 0)'">
     </div>`
@@ -165,6 +168,16 @@ function toggle(btn) {
   for (const card of document.querySelectorAll('.card[data-status="' + btn.dataset.status + '"]')) {
     card.classList.toggle('hidden', !on);
   }
+}
+// Swipe-slider overlay images reuse the pane images' already-embedded data URIs
+// instead of re-embedding each PNG a second time in the document.
+for (const card of document.querySelectorAll('.card[data-status="changed"]')) {
+  const baseline = card.querySelector('.shot-baseline');
+  const current = card.querySelector('.shot-current');
+  const under = card.querySelector('.overlay .under');
+  const over = card.querySelector('.overlay .over');
+  if (baseline && under) under.src = baseline.src;
+  if (current && over) over.src = current.src;
 }
 </script>
 </body>

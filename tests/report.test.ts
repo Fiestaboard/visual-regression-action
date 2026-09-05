@@ -8,6 +8,7 @@ const meta: ReportMeta = {
   sha: 'abc1234',
   baselineRunUrl: 'https://github.com/Fiestaboard/demo/actions/runs/0',
   missingBaseline: false,
+  reportArtifactName: 'vrt-report',
 };
 
 const png = Buffer.from(
@@ -40,6 +41,21 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('home.png');
     expect(md).toContain(meta.runUrl);
     expect(md).toContain('1.23%');
+  });
+
+  it('interpolates the key-aware report artifact name', () => {
+    const md = generateMarkdownSummary(summary(), { ...meta, reportArtifactName: 'vrt-report-web' });
+    expect(md).toContain('vrt-report-web');
+    expect(md).not.toContain('artifact `vrt-report`');
+  });
+
+  it('escapes pipe characters in screenshot names so they cannot break the table', () => {
+    const s: CompareSummary = {
+      results: [{ name: 'a|b.png', status: 'changed', diffRatio: 0.01, baselinePng: png, currentPng: png, diffPng: png }],
+      changed: 1, added: 0, removed: 0, unchanged: 0, hasChanges: true,
+    };
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain('a\\|b.png');
   });
 
   it('celebrates when nothing changed', () => {
@@ -78,5 +94,18 @@ describe('generateHtmlReport', () => {
     const html = generateHtmlReport(s, meta);
     expect(html).not.toContain('<img src=x>.png');
     expect(html).toContain('&lt;img src=x&gt;.png');
+  });
+
+  it('embeds each PNG for a changed screenshot exactly once (swipe overlay reuses pane images)', () => {
+    const html = generateHtmlReport(summary(), meta);
+    const payload = png.toString('base64');
+    const occurrences = html.split(payload).length - 1;
+    // home.png (changed) has baseline+current+diff all equal to the same fixture PNG,
+    // so its 3 panes each embed it once = 3. old.png (removed) and nav/menu.png (added)
+    // each embed it once more = 5 total. The overlay must NOT add a 4th/5th/6th copy.
+    expect(occurrences).toBe(5);
+    // The overlay images should have no src in the markup (populated by script at runtime).
+    expect(html).toContain('<img class="under" alt="baseline">');
+    expect(html).toContain('<img class="over" alt="current">');
   });
 });

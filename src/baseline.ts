@@ -32,10 +32,13 @@ interface ArtifactOctokit {
         repo: string;
         name: string;
         per_page: number;
+        page: number;
       }) => Promise<{ data: { artifacts: ArtifactListItem[] } }>;
     };
   };
 }
+
+const MAX_ARTIFACT_PAGES = 10;
 
 export async function findBaselineArtifact(
   octokit: ArtifactOctokit,
@@ -44,13 +47,18 @@ export async function findBaselineArtifact(
   name: string,
   branch: string
 ): Promise<BaselineRef | null> {
-  const { data } = await octokit.rest.actions.listArtifactsForRepo({ owner, repo, name, per_page: 100 });
-  const match = data.artifacts
-    .filter((a) => a.name === name && !a.expired && a.workflow_run?.head_branch === branch && a.workflow_run?.id)
-    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
-  if (!match) return null;
-  const runId = match.workflow_run!.id!;
-  return { artifactId: match.id, runId, runUrl: `https://github.com/${owner}/${repo}/actions/runs/${runId}` };
+  for (let page = 1; page <= MAX_ARTIFACT_PAGES; page++) {
+    const { data } = await octokit.rest.actions.listArtifactsForRepo({ owner, repo, name, per_page: 100, page });
+    const match = data.artifacts
+      .filter((a) => a.name === name && !a.expired && a.workflow_run?.head_branch === branch && a.workflow_run?.id)
+      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
+    if (match) {
+      const runId = match.workflow_run!.id!;
+      return { artifactId: match.id, runId, runUrl: `https://github.com/${owner}/${repo}/actions/runs/${runId}` };
+    }
+    if (data.artifacts.length < 100) return null;
+  }
+  return null;
 }
 
 export async function downloadBaselineArtifact(

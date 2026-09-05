@@ -2,14 +2,42 @@ import * as core from '@actions/core';
 
 export const COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
 
+export function commentMarker(key: string): string {
+  return key ? `<!-- fiestaboard/visual-regression-action:${key} -->` : COMMENT_MARKER;
+}
+
 interface MinimalOctokit {
   rest: {
     issues: {
-      listComments: (p: { owner: string; repo: string; issue_number: number; per_page: number }) => Promise<{ data: Array<{ id: number; body?: string }> }>;
+      listComments: (p: {
+        owner: string;
+        repo: string;
+        issue_number: number;
+        per_page: number;
+        page: number;
+      }) => Promise<{ data: Array<{ id: number; body?: string }> }>;
       createComment: (p: { owner: string; repo: string; issue_number: number; body: string }) => Promise<unknown>;
       updateComment: (p: { owner: string; repo: string; comment_id: number; body: string }) => Promise<unknown>;
     };
   };
+}
+
+const MAX_COMMENT_PAGES = 10;
+
+async function findMarkedComment(
+  octokit: MinimalOctokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  marker: string
+): Promise<{ id: number; body?: string } | undefined> {
+  for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
+    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+    const existing = data.find((c) => c.body?.includes(marker));
+    if (existing) return existing;
+    if (data.length < 100) return undefined;
+  }
+  return undefined;
 }
 
 export async function upsertStickyComment(
@@ -17,12 +45,13 @@ export async function upsertStickyComment(
   owner: string,
   repo: string,
   prNumber: number,
-  body: string
+  body: string,
+  key: string
 ): Promise<void> {
-  const full = `${COMMENT_MARKER}\n${body}`;
+  const marker = commentMarker(key);
+  const full = `${marker}\n${body}`;
   try {
-    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 });
-    const existing = data.find((c) => c.body?.includes(COMMENT_MARKER));
+    const existing = await findMarkedComment(octokit, owner, repo, prNumber, marker);
     if (existing) {
       await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: full });
     } else {

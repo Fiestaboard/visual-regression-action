@@ -17,10 +17,15 @@ import {
 } from './baseline';
 import { CompareSummary } from './types';
 
+const KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
+
 async function run(): Promise<void> {
   const screenshotsDir = core.getInput('screenshots-dir', { required: true });
   const token = core.getInput('github-token', { required: true });
   const key = core.getInput('key');
+  if (key && !KEY_PATTERN.test(key)) {
+    throw new Error(`Invalid key "${key}" — use only letters, digits, ".", "_", "-".`);
+  }
   const thresholdRaw = core.getInput('threshold') || '0.1';
   const threshold = parseFloat(thresholdRaw);
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
@@ -34,7 +39,11 @@ async function run(): Promise<void> {
   const failOnDiff = core.getBooleanInput('fail-on-diff');
   const comment = core.getBooleanInput('comment');
   const retentionInput = core.getInput('retention-days');
-  const retentionDays = retentionInput ? parseInt(retentionInput, 10) : undefined;
+  let retentionDays = retentionInput ? parseInt(retentionInput, 10) : undefined;
+  if (retentionInput && (!Number.isFinite(retentionDays) || (retentionDays as number) < 1)) {
+    core.warning(`Invalid retention-days "${retentionInput}" — ignoring it and using the repo default.`);
+    retentionDays = undefined;
+  }
 
   const ctx = github.context;
   const { owner, repo } = ctx.repo;
@@ -82,15 +91,25 @@ async function run(): Promise<void> {
     sha: ctx.payload.pull_request?.head?.sha ?? ctx.sha,
     baselineRunUrl: ref?.runUrl,
     missingBaseline: !ref,
+    reportArtifactName: reportArtifactName(key),
   };
 
-  const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
-  const reportPath = path.join(reportDir, 'index.html');
-  fs.writeFileSync(reportPath, generateHtmlReport(summary, meta));
+  let reportPath = '';
   try {
-    await uploadFileAsArtifact(reportArtifactName(key), reportPath, retentionDays);
+    const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
+    reportPath = path.join(reportDir, 'index.html');
+    fs.writeFileSync(reportPath, generateHtmlReport(summary, meta));
   } catch (err) {
-    core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
+    core.warning(`Could not generate HTML report: ${err instanceof Error ? err.message : String(err)}`);
+    reportPath = '';
+  }
+
+  if (reportPath) {
+    try {
+      await uploadFileAsArtifact(reportArtifactName(key), reportPath, retentionDays);
+    } catch (err) {
+      core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   const md = generateMarkdownSummary(summary, meta);
@@ -102,7 +121,7 @@ async function run(): Promise<void> {
 
   const prNumber = ctx.payload.pull_request?.number;
   if (comment && prNumber) {
-    await upsertStickyComment(octokit, owner, repo, prNumber, md);
+    await upsertStickyComment(octokit, owner, repo, prNumber, md, key);
   }
 
   core.setOutput('changed', String(summary.changed));
