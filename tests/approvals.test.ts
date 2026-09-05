@@ -4,8 +4,8 @@ import { CompareSummary } from '../src/types';
 
 const OK = 'COLLABORATOR';
 
-function comment(body: string, assoc = OK) {
-  return { body, author_association: assoc };
+function comment(body: string, assoc = OK, created_at = '2026-09-05T12:00:00Z') {
+  return { body, author_association: assoc, created_at };
 }
 
 describe('shortHash', () => {
@@ -57,6 +57,14 @@ describe('parseApprovalCommands', () => {
     const a = parseApprovalCommands([comment('/vrt approve nohash.png all@123 plain garbage@')]);
     expect(a.entries.size).toBe(0);
     expect(a.allShas).toEqual([]);
+  });
+
+  it('collects timestamps of bare "all" commands from authorized commenters', () => {
+    const a = parseApprovalCommands([
+      comment('/vrt approve all', OK, '2026-09-05T12:00:00Z'),
+      comment('/vrt approve all', 'NONE', '2026-09-05T13:00:00Z'),
+    ]);
+    expect(a.allTimestamps).toEqual(['2026-09-05T12:00:00Z']);
   });
 });
 
@@ -110,6 +118,25 @@ describe('applyApprovals', () => {
   it('all@sha with a non-matching head approves nothing', () => {
     const s = summary();
     const a = parseApprovalCommands([comment('/vrt approve all@1234567')]);
+    expect(applyApprovals(s, a, 'deadbeefcafe00')).toBe(0);
+  });
+
+  it('bare "all" approves everything when the comment is newer than the head commit', () => {
+    const s = summary();
+    const a = parseApprovalCommands([comment('/vrt approve all', OK, '2026-09-05T12:00:00Z')]);
+    expect(applyApprovals(s, a, 'deadbeefcafe00', '2026-09-05T11:00:00Z')).toBe(2);
+    expect(s.results[2].approved).toBeUndefined(); // added still exempt
+  });
+
+  it('bare "all" is stale once a newer commit is pushed', () => {
+    const s = summary();
+    const a = parseApprovalCommands([comment('/vrt approve all', OK, '2026-09-05T12:00:00Z')]);
+    expect(applyApprovals(s, a, 'deadbeefcafe00', '2026-09-05T12:30:00Z')).toBe(0);
+  });
+
+  it('bare "all" approves nothing when the head commit time is unknown', () => {
+    const s = summary();
+    const a = parseApprovalCommands([comment('/vrt approve all', OK, '2026-09-05T12:00:00Z')]);
     expect(applyApprovals(s, a, 'deadbeefcafe00')).toBe(0);
   });
 });

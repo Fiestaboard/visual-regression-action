@@ -85120,11 +85120,17 @@ function isApproveComment(body) {
 function parseApprovalCommands(comments) {
     const entries = new Map();
     const allShas = [];
+    const allTimestamps = [];
     for (const c of comments) {
         if (!c.body || !isApproveComment(c.body) || !AUTHORIZED.has(c.author_association ?? ''))
             continue;
         const tokens = c.body.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
         for (const token of tokens) {
+            if (token === 'all') {
+                if (c.created_at)
+                    allTimestamps.push(c.created_at);
+                continue;
+            }
             const at = token.lastIndexOf('@');
             if (at <= 0 || at === token.length - 1)
                 continue;
@@ -85141,14 +85147,17 @@ function parseApprovalCommands(comments) {
             }
         }
     }
-    return { entries, allShas };
+    return { entries, allShas, allTimestamps };
 }
 /**
  * Marks changed/removed screenshots as approved when a comment pinned their
- * exact content (or the whole head sha). Returns the approved count.
+ * exact content or the whole head — via `all@<sha>`, or a bare `all` posted
+ * after the head commit (so any newer push invalidates it). Returns the
+ * approved count.
  */
-function applyApprovals(summary, approvals, headSha) {
-    const headMatch = approvals.allShas.some((s) => headSha.toLowerCase().startsWith(s));
+function applyApprovals(summary, approvals, headSha, headCommittedAt) {
+    const headMatch = approvals.allShas.some((s) => headSha.toLowerCase().startsWith(s)) ||
+        (!!headCommittedAt && approvals.allTimestamps.some((t) => t >= headCommittedAt));
     let approved = 0;
     for (const r of summary.results) {
         if (r.status !== 'changed' && r.status !== 'removed')
@@ -85695,7 +85704,20 @@ async function run() {
     if (prNumber && summary.hasChanges) {
         try {
             const comments = await (0, comment_1.listPrComments)(octokit, owner, repo, prNumber);
-            approved = (0, approvals_1.applyApprovals)(summary, (0, approvals_1.parseApprovalCommands)(comments), headSha);
+            const approvals = (0, approvals_1.parseApprovalCommands)(comments);
+            let headCommittedAt;
+            if (approvals.allTimestamps.length > 0) {
+                // Bare "/vrt approve all" is only valid while its head is current:
+                // compare the comment time against the head commit's own timestamp.
+                try {
+                    const { data: commit } = await octokit.rest.repos.getCommit({ owner, repo, ref: headSha });
+                    headCommittedAt = commit.commit.committer?.date ?? commit.commit.author?.date ?? undefined;
+                }
+                catch (err) {
+                    core.warning(`Could not resolve the head commit time for "/vrt approve all": ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+            approved = (0, approvals_1.applyApprovals)(summary, approvals, headSha, headCommittedAt);
             if (approved > 0)
                 core.info(`${approved} visual change(s) approved via /vrt approve comments.`);
         }
@@ -85912,7 +85934,7 @@ function generateMarkdownSummary(summary, meta) {
             .filter(Boolean);
         lines.push('<details>', '<summary>✅ <b>Accept these changes</b> — copy a command, post it as a comment</summary>', '', 'If the changes are intentional, post one of these as a PR comment. ' +
             'With the [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed, ' +
-            'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.', '', 'Approve everything at this commit:', '', '```', `/vrt approve all@${meta.sha.slice(0, 7)}`, '```');
+            'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.', '', 'Approve everything (valid until the next push):', '', '```', '/vrt approve all', '```', '', `Or pinned to exactly this commit: \`/vrt approve all@${meta.sha.slice(0, 7)}\``);
         if (entries.length > 0) {
             lines.push('', 'Or approve screenshots individually (edit to taste):', '', '```', `/vrt approve ${entries.join(' ')}`, '```');
         }

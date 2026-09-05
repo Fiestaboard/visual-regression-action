@@ -98,7 +98,19 @@ async function run(): Promise<void> {
   if (prNumber && summary.hasChanges) {
     try {
       const comments = await listPrComments(octokit, owner, repo, prNumber);
-      approved = applyApprovals(summary, parseApprovalCommands(comments), headSha);
+      const approvals = parseApprovalCommands(comments);
+      let headCommittedAt: string | undefined;
+      if (approvals.allTimestamps.length > 0) {
+        // Bare "/vrt approve all" is only valid while its head is current:
+        // compare the comment time against the head commit's own timestamp.
+        try {
+          const { data: commit } = await octokit.rest.repos.getCommit({ owner, repo, ref: headSha });
+          headCommittedAt = commit.commit.committer?.date ?? commit.commit.author?.date ?? undefined;
+        } catch (err) {
+          core.warning(`Could not resolve the head commit time for "/vrt approve all": ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      approved = applyApprovals(summary, approvals, headSha, headCommittedAt);
       if (approved > 0) core.info(`${approved} visual change(s) approved via /vrt approve comments.`);
     } catch (err) {
       core.warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);

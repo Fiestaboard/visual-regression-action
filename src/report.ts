@@ -101,11 +101,13 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
         'With the [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed, ' +
         'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.',
       '',
-      'Approve everything at this commit:',
+      'Approve everything (valid until the next push):',
       '',
       '```',
-      `/vrt approve all@${meta.sha.slice(0, 7)}`,
-      '```'
+      '/vrt approve all',
+      '```',
+      '',
+      `Or pinned to exactly this commit: \`/vrt approve all@${meta.sha.slice(0, 7)}\``
     );
     if (entries.length > 0) {
       lines.push('', 'Or approve screenshots individually (edit to taste):', '', '```', `/vrt approve ${entries.join(' ')}`, '```');

@@ -93,7 +93,7 @@ Details worth knowing:
 
 - Only comments from users with an `OWNER`, `MEMBER`, or `COLLABORATOR` association count. Approvals are ordinary PR comments, so there's a permanent audit trail of who accepted what.
 - The hash pin means an approval covers *those exact pixels*. Push another change to the same screenshot and the stale approval silently stops matching — the check goes red again.
-- `/vrt approve all@<commit-sha>` (7+ hex chars of the PR head) bulk-approves every changed/removed screenshot at that head. New pushes invalidate it.
+- `/vrt approve all` bulk-approves every changed/removed screenshot — but only while the head it was posted against is still the PR head; any newer push invalidates it. `/vrt approve all@<commit-sha>` (7+ hex chars) is the explicit, commit-pinned form.
 - Approvals only greenlight the check; baselines still update the normal way, when the merge lands and your default branch republishes them.
 - Screenshot names containing whitespace can't be approved individually — use `all@<sha>`.
 
