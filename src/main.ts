@@ -6,7 +6,9 @@ import * as github from '@actions/github';
 import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
 import { generateHtmlReport, generateMarkdownSummary, ReportMeta } from './report';
-import { upsertStickyComment } from './comment';
+import { upsertStickyComment, listPrComments } from './comment';
+import { parseApprovalCommands, applyApprovals, isApproveComment } from './approvals';
+import { findVrtRunsToRerun, rerunFailedJobs, reactToComment } from './approve';
 import {
   baselineArtifactName,
   reportArtifactName,
@@ -20,7 +22,6 @@ import { CompareSummary } from './types';
 const KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 async function run(): Promise<void> {
-  const screenshotsDir = core.getInput('screenshots-dir', { required: true });
   const token = core.getInput('github-token', { required: true });
   const key = core.getInput('key');
   if (key && !KEY_PATTERN.test(key)) {
@@ -51,6 +52,12 @@ async function run(): Promise<void> {
   const mode = resolveMode(core.getInput('mode') || 'auto', ctx.eventName, ctx.ref, defaultBranch);
   core.info(`Mode: ${mode}`);
 
+  if (mode === 'approve') {
+    await runApproveMode(token, owner, repo);
+    return;
+  }
+
+  const screenshotsDir = core.getInput('screenshots-dir', { required: true });
   if (!fs.existsSync(screenshotsDir)) {
     throw new Error(`screenshots-dir "${screenshotsDir}" does not exist.`);
   }
@@ -85,13 +92,27 @@ async function run(): Promise<void> {
     diffRatio,
   });
 
+  const prNumber = ctx.payload.pull_request?.number;
+  const headSha = ctx.payload.pull_request?.head?.sha ?? ctx.sha;
+  let approved = 0;
+  if (prNumber && summary.hasChanges) {
+    try {
+      const comments = await listPrComments(octokit, owner, repo, prNumber);
+      approved = applyApprovals(summary, parseApprovalCommands(comments), headSha);
+      if (approved > 0) core.info(`${approved} visual change(s) approved via /vrt approve comments.`);
+    } catch (err) {
+      core.warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   const meta: ReportMeta = {
     repo: `${owner}/${repo}`,
     runUrl: `https://github.com/${owner}/${repo}/actions/runs/${ctx.runId}`,
-    sha: ctx.payload.pull_request?.head?.sha ?? ctx.sha,
+    sha: headSha,
     baselineRunUrl: ref?.runUrl,
     missingBaseline: !ref,
     reportArtifactName: reportArtifactName(key),
+    prUrl: prNumber ? `https://github.com/${owner}/${repo}/pull/${prNumber}` : undefined,
   };
 
   let reportPath = '';
@@ -122,7 +143,6 @@ async function run(): Promise<void> {
     core.warning(`Could not write step summary: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  const prNumber = ctx.payload.pull_request?.number;
   if (comment && prNumber) {
     await upsertStickyComment(octokit, owner, repo, prNumber, md, key);
   }
@@ -131,20 +151,64 @@ async function run(): Promise<void> {
   core.setOutput('added', String(summary.added));
   core.setOutput('removed', String(summary.removed));
   core.setOutput('unchanged', String(summary.unchanged));
+  core.setOutput('approved', String(approved));
   core.setOutput('has-changes', String(summary.hasChanges));
   core.setOutput('report-path', reportPath);
 
   core.info(
     `Compared ${summary.results.length} screenshot(s): ` +
-      `${summary.changed} changed, ${summary.added} added, ${summary.removed} removed, ${summary.unchanged} unchanged.`
+      `${summary.changed} changed, ${summary.added} added, ${summary.removed} removed, ` +
+      `${summary.unchanged} unchanged, ${approved} approved.`
   );
 
-  if (failOnDiff && summary.hasChanges) {
+  const unapproved = summary.changed + summary.removed - approved;
+  if (failOnDiff && unapproved > 0) {
     core.setFailed(
-      `Visual changes detected: ${summary.changed} changed, ${summary.removed} removed. ` +
-        `Download the "${reportArtifactName(key)}" artifact to review. Merging this PR updates the baselines.`
+      `Visual changes detected: ${summary.changed} changed, ${summary.removed} removed (${approved} approved). ` +
+        `Download the "${reportArtifactName(key)}" artifact to review. To accept intentional changes, use the ` +
+        `report's reviewer to generate a "/vrt approve" command and post it as a PR comment. Merging updates the baselines.`
     );
+  } else if (failOnDiff && summary.hasChanges) {
+    core.info('All visual changes are approved — passing.');
   }
+}
+
+async function runApproveMode(token: string, owner: string, repo: string): Promise<void> {
+  const ctx = github.context;
+  const commentBody: string = ctx.payload.comment?.body ?? '';
+  const commentId: number | undefined = ctx.payload.comment?.id;
+  const association: string = ctx.payload.comment?.author_association ?? '';
+  const prNumber: number | undefined = ctx.payload.issue?.number;
+
+  if (!ctx.payload.issue?.pull_request) {
+    core.info('Comment is not on a pull request — nothing to do.');
+    return;
+  }
+  if (!isApproveComment(commentBody)) {
+    core.info('Comment is not a /vrt approve command — nothing to do.');
+    return;
+  }
+  if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association)) {
+    core.notice(`Ignoring /vrt approve from author_association "${association}" — approvals require write access.`);
+    return;
+  }
+  if (!prNumber) {
+    core.info('No PR number in the event payload — nothing to do.');
+    return;
+  }
+
+  const octokit = github.getOctokit(token);
+  const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
+  const runs = await findVrtRunsToRerun(octokit, owner, repo, pr.head.sha);
+  if (runs.length === 0) {
+    core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
+    return;
+  }
+  for (const runId of runs) {
+    await rerunFailedJobs(octokit, owner, repo, runId);
+    core.info(`Rerunning failed jobs of run ${runId} to re-evaluate approvals.`);
+  }
+  if (commentId) await reactToComment(octokit, owner, repo, commentId);
 }
 
 run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));

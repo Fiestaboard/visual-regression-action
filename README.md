@@ -79,6 +79,46 @@ Results surface in three places:
 
 The report inlines every screenshot as a base64 data URI directly in the HTML, so very large suites (many or very large screenshots) produce a correspondingly large artifact — keep screenshots reasonably sized (e.g. viewport-cropped rather than full-page where possible) if this becomes a concern.
 
+## Approving changes
+
+An intentional visual change leaves the check red — and if the check is required by branch protection, you need a way to accept it without weakening the gate. That's what `/vrt approve` is for:
+
+1. Open the report and hit **Review changes**. Approve (`A`) or reject (`R`) each screenshot as you step through.
+2. The report assembles a command as you go, e.g. `/vrt approve home.png@1a2b3c4d5e6f old.png@9f8e7d6c5b4a` — each entry pins a hash of that screenshot's exact pixels. Copy it.
+3. Post it as a comment on the PR. If you've added the [approvals workflow](examples/vrt-approvals.yml), the failed check reruns automatically (the comment gets a 🚀 when the rerun kicks off); otherwise hit "Re-run failed jobs" yourself.
+4. On the rerun, the action reads the PR's comments, honors approvals whose hashes still match, and passes when every changed/removed screenshot is approved. Approved items stay visible in the report and comment, marked ✅.
+
+Details worth knowing:
+
+- Only comments from users with an `OWNER`, `MEMBER`, or `COLLABORATOR` association count. Approvals are ordinary PR comments, so there's a permanent audit trail of who accepted what.
+- The hash pin means an approval covers *those exact pixels*. Push another change to the same screenshot and the stale approval silently stops matching — the check goes red again.
+- `/vrt approve all@<commit-sha>` (7+ hex chars of the PR head) bulk-approves every changed/removed screenshot at that head. New pushes invalidate it.
+- Approvals only greenlight the check; baselines still update the normal way, when the merge lands and your default branch republishes them.
+- Screenshot names containing whitespace can't be approved individually — use `all@<sha>`.
+
+To enable auto-rerun, add this second workflow ([examples/vrt-approvals.yml](examples/vrt-approvals.yml)):
+
+```yaml
+name: VRT approvals
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  approve:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/vrt approve') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write        # rerun the failed visual check
+      issues: write         # rocket reaction on the approval comment
+    steps:
+      - uses: fiestaboard/visual-regression-action@v1
+        with:
+          mode: approve
+```
+
 ## Recipes
 
 **Multiple workflows in one repo** — if more than one workflow file runs this action (not just multiple steps in the same workflow), give each workflow its own `key` too; otherwise their baseline artifacts share a name and can cross-contaminate each other's comparisons.
@@ -142,7 +182,7 @@ permissions:
 ## FAQ
 
 **Why is my check red after an intentional visual change?**
-That's the design: merging the PR is the approval. A changed or removed screenshot fails the job by default (`fail-on-diff: true`) so the change gets a deliberate look before merge. Once merged, the default branch rebuilds and publishes the new baseline automatically — no separate "accept" step. If you'd rather never fail the check, run [report-only mode](#recipes) and branch on `has-changes` instead.
+That's the design: a changed or removed screenshot fails the job by default (`fail-on-diff: true`) so the change gets a deliberate look before merge. To accept it, use the [approval flow](#approving-changes) — review in the report, post the generated `/vrt approve` command, and the check goes green. Once merged, the default branch rebuilds and publishes the new baseline automatically. If you'd rather never fail the check, run [report-only mode](#recipes) and branch on `has-changes` instead.
 
 **What happens on the very first run?**
 There's no baseline artifact yet, so every screenshot reports as "new." The job passes with a note. The first push to your default branch after that publishes the initial baseline, and PRs after that compare normally.

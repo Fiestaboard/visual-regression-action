@@ -11,6 +11,8 @@ export interface ScreenshotResult {
   diffPng?: Buffer;
   /** Transparent PNG containing only the changed pixels (overlay view). */
   diffMaskPng?: Buffer;
+  /** True when a `/vrt approve` PR comment pinned this exact content. */
+  approved?: boolean;
 }
 
 export interface CompareSummary {

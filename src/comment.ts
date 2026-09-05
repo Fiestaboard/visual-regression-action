@@ -15,7 +15,7 @@ interface MinimalOctokit {
         issue_number: number;
         per_page: number;
         page: number;
-      }) => Promise<{ data: Array<{ id: number; body?: string }> }>;
+      }) => Promise<{ data: Array<{ id: number; body?: string; author_association?: string }> }>;
       createComment: (p: { owner: string; repo: string; issue_number: number; body: string }) => Promise<unknown>;
       updateComment: (p: { owner: string; repo: string; comment_id: number; body: string }) => Promise<unknown>;
     };
@@ -38,6 +38,22 @@ async function findMarkedComment(
     if (data.length < 100) return undefined;
   }
   return undefined;
+}
+
+/** All PR comments (paginated, capped) — used to collect /vrt approve commands. */
+export async function listPrComments(
+  octokit: MinimalOctokit,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<Array<{ id: number; body?: string; author_association?: string }>> {
+  const out: Array<{ id: number; body?: string; author_association?: string }> = [];
+  for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
+    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+    out.push(...data);
+    if (data.length < 100) break;
+  }
+  return out;
 }
 
 export async function upsertStickyComment(

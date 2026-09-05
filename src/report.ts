@@ -1,4 +1,5 @@
 import { CompareSummary, ScreenshotResult, Status } from './types';
+import { shortHash } from './approvals';
 
 export interface ReportMeta {
   repo: string;
@@ -9,6 +10,8 @@ export interface ReportMeta {
   reportArtifactName: string;
   /** Direct artifact download URL, when the report upload returned an id. */
   reportDownloadUrl?: string;
+  /** PR the compare ran for — target for pasting /vrt approve commands. */
+  prUrl?: string;
 }
 
 const esc = (s: string): string =>
@@ -42,10 +45,15 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
   } else if (!summary.hasChanges && summary.added === 0) {
     lines.push(`✅ **No visual changes** across ${summary.unchanged} screenshot(s).`, '');
   } else {
+    const approvedCount = summary.results.filter((r) => r.approved).length;
+    const approvedNote = approvedCount > 0 ? ` · ${approvedCount} approved` : '';
     lines.push(
-      `**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged**`,
+      `**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged${approvedNote}**`,
       ''
     );
+    if (approvedCount > 0 && approvedCount === summary.changed + summary.removed) {
+      lines.push('✅ **All visual changes approved** via `/vrt approve`.', '');
+    }
   }
 
   const notable = summary.results.filter((r) => r.status !== 'unchanged').slice(0, 50);
@@ -53,7 +61,8 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
     lines.push('| Status | Screenshot | Diff |', '|---|---|---|');
     for (const r of notable) {
       const diff = r.status === 'changed' ? pct(r.diffRatio) : '—';
-      lines.push(`| ${STATUS_LABEL[r.status]} | \`${escPipe(r.name)}\` | ${diff} |`);
+      const label = r.approved ? `${STATUS_LABEL[r.status]} · ✅ approved` : STATUS_LABEL[r.status];
+      lines.push(`| ${label} | \`${escPipe(r.name)}\` | ${diff} |`);
     }
     const hidden = summary.results.filter((r) => r.status !== 'unchanged').length - notable.length;
     if (hidden > 0) lines.push('', `…and ${hidden} more.`);
@@ -76,11 +85,13 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
 // <img> (swipe views, the fullscreen reviewer) is populated at load by
 // copying those srcs — see the inline script.
 function changedCard(r: ScreenshotResult): string {
+  const hash = r.currentPng ? shortHash(r.currentPng) : '';
   return `
-  <section class="card" data-status="changed">
+  <section class="card" data-status="changed"${hash ? ` data-hash="${hash}"` : ''}>
     <header>
       <span class="badge changed">${STATUS_LABEL.changed}</span>
       <h3>${esc(r.name)}</h3>
+      ${r.approved ? '<span class="okchip">✓ approved</span>' : ''}
       <span class="stat">${pct(r.diffRatio)}</span>
       <button class="expand" data-open type="button">Expand ⤢</button>
     </header>
@@ -123,11 +134,13 @@ function simpleCard(r: ScreenshotResult): string {
       ? `<img class="shot-current" src="${dataUri(r.currentPng)}" alt="current (new)">`
       : `<img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline (removed)">`;
   const caption = r.status === 'added' ? 'Current (new)' : 'Baseline (removed)';
+  const hash = r.status === 'removed' && r.baselinePng ? shortHash(r.baselinePng) : '';
   return `
-  <section class="card" data-status="${r.status}">
+  <section class="card" data-status="${r.status}"${hash ? ` data-hash="${hash}"` : ''}>
     <header>
       <span class="badge ${r.status}">${STATUS_LABEL[r.status]}</span>
       <h3>${esc(r.name)}</h3>
+      ${r.approved ? '<span class="okchip">✓ approved</span>' : ''}
       <button class="expand" data-open type="button">Expand ⤢</button>
     </header>
     <div class="single"><figure><figcaption>${caption}</figcaption>${img}</figure></div>
@@ -250,6 +263,23 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
   .lightbox .tab[aria-selected="true"] { background:#e8e8e8; color:#111; border-color:#e8e8e8 }
   button.lb-close { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
     border-radius:8px; padding:4px 12px; font-size:13px }
+  .okchip { border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600;
+    background:var(--unchanged-bg); color:var(--unchanged); white-space:nowrap }
+  button.vote { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
+    border-radius:8px; padding:4px 12px; font-size:13px }
+  button.vote.approve[aria-pressed="true"] { background:#15803d; border-color:#15803d; color:#fff }
+  button.vote.reject[aria-pressed="true"] { background:#b91c1c; border-color:#b91c1c; color:#fff }
+  .lb-tally { color:#9a9a9a; font-size:13px; font-variant-numeric:tabular-nums }
+  .cmdbar { position:fixed; left:0; right:0; bottom:0; z-index:12; display:flex; gap:10px;
+    align-items:center; flex-wrap:wrap; padding:12px 20px; background:var(--card);
+    border-top:2px solid var(--hot); box-shadow:0 -4px 16px rgba(0,0,0,.15) }
+  .cmdbar[hidden] { display:none }
+  .cmdbar .hint { font-size:13px; color:var(--muted) }
+  .cmdbar input { flex:1 1 320px; min-width:0; font:13px ui-monospace,Menlo,monospace;
+    padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+    background:var(--bg); color:var(--fg) }
+  .cmdbar .copy, .cmdbar a.pr { border:0; background:var(--hot); color:#fff; border-radius:8px;
+    padding:8px 16px; font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap }
   .lb-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:11;
     display:flex; flex-direction:column; align-items:center; gap:6px;
     border:1px solid #3a3d44; background:rgba(27,29,33,.9); color:#e8e8e8;
@@ -296,6 +326,9 @@ ${ordered.map(card).join('\n')}
     <span class="lb-count"></span>
     <span class="lb-name"></span>
     <span class="lb-stat"></span>
+    <button class="vote approve" type="button" aria-pressed="false">Approve <kbd>A</kbd></button>
+    <button class="vote reject" type="button" aria-pressed="false">Reject <kbd>R</kbd></button>
+    <span class="lb-tally"></span>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-mode="swipe" type="button">Swipe <kbd>S</kbd></button>
       <button class="tab" role="tab" data-mode="overlay" type="button">Overlay <kbd>O</kbd></button>
@@ -312,6 +345,12 @@ ${ordered.map(card).join('\n')}
     <input class="scrub" type="range" min="0" max="100" value="50" aria-label="swipe position">
     <span>scroll to zoom · drag to pan · double-click resets</span>
   </div>
+</div>
+<div class="cmdbar" hidden>
+  <span class="hint">Post this as a PR comment to accept the approved changes:</span>
+  <input class="cmd" readonly aria-label="approval command">
+  <button class="copy" type="button">Copy</button>
+  ${meta.prUrl ? `<a class="pr" href="${esc(meta.prUrl)}">Open PR ↗</a>` : ''}
 </div>
 <script>
 (function () {
@@ -372,6 +411,41 @@ ${ordered.map(card).join('\n')}
   var zoomWrap = lb.querySelector('.lb-zoom');
   var lbScrub = lb.querySelector('.lb-foot .scrub');
   var idx = 0, scale = 1, tx = 0, ty = 0, mode = 'swipe';
+  var decisions = cards.map(function () { return null; });
+  var voteA = lb.querySelector('.vote.approve');
+  var voteR = lb.querySelector('.vote.reject');
+  var cmdbar = document.querySelector('.cmdbar');
+  var cmdInput = cmdbar.querySelector('.cmd');
+  function votableCards() {
+    return cards.filter(function (c) { return c.getAttribute('data-hash'); });
+  }
+  function updateTally() {
+    var total = votableCards().length;
+    var yes = 0, no = 0;
+    cards.forEach(function (c, i) {
+      if (!c.getAttribute('data-hash')) return;
+      if (decisions[i] === true) yes++;
+      if (decisions[i] === false) no++;
+    });
+    lb.querySelector('.lb-tally').textContent =
+      total ? yes + ' approved · ' + no + ' rejected · ' + (total - yes - no) + ' left' : '';
+  }
+  function updateCmdbar() {
+    var entries = [];
+    cards.forEach(function (c, i) {
+      var h = c.getAttribute('data-hash');
+      if (h && decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
+    });
+    cmdbar.hidden = entries.length === 0;
+    if (entries.length) cmdInput.value = '/vrt approve ' + entries.join(' ');
+  }
+  function vote(v) {
+    if (!cards[idx].getAttribute('data-hash')) return;
+    decisions[idx] = decisions[idx] === v ? null : v;
+    updateCmdbar();
+    resetZoom();
+    show(decisions[idx] === null ? idx : idx + 1);
+  }
   function apply() {
     canvas.style.transform = 'translate(-50%,-50%) translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
   }
@@ -390,6 +464,12 @@ ${ordered.map(card).join('\n')}
       t.setAttribute('aria-selected', String(changed && t.dataset.mode === mode));
     });
     lbScrub.style.display = changed && mode === 'swipe' ? '' : 'none';
+    var votable = !!c.getAttribute('data-hash');
+    voteA.style.display = votable ? '' : 'none';
+    voteR.style.display = votable ? '' : 'none';
+    voteA.setAttribute('aria-pressed', String(decisions[idx] === true));
+    voteR.setAttribute('aria-pressed', String(decisions[idx] === false));
+    updateTally();
     var src = function (sel) { var el = c.querySelector(sel); return el ? el.src : ''; };
     var w = 'min(88vw, 1400px)';
     var html;
@@ -423,6 +503,17 @@ ${ordered.map(card).join('\n')}
   lb.querySelector('.lb-close').addEventListener('click', close);
   lb.querySelector('.lb-nav.prev').addEventListener('click', function () { resetZoom(); show(idx - 1); });
   lb.querySelector('.lb-nav.next').addEventListener('click', function () { resetZoom(); show(idx + 1); });
+  voteA.addEventListener('click', function () { vote(true); });
+  voteR.addEventListener('click', function () { vote(false); });
+  cmdbar.querySelector('.copy').addEventListener('click', function () {
+    var btn = cmdbar.querySelector('.copy');
+    var done = function () { btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmdInput.value).then(done, function () { cmdInput.select(); });
+    } else {
+      cmdInput.select();
+    }
+  });
   document.addEventListener('dragstart', function (e) {
     if (e.target && e.target.tagName === 'IMG') e.preventDefault();
   });
@@ -460,6 +551,8 @@ ${ordered.map(card).join('\n')}
     else if (e.key === 's' || e.key === 'S') { mode = 'swipe'; show(idx); }
     else if (e.key === 'o' || e.key === 'O') { mode = 'overlay'; show(idx); }
     else if (e.key === 'd' || e.key === 'D') { mode = 'sbs'; show(idx); }
+    else if (e.key === 'a' || e.key === 'A') { vote(true); }
+    else if (e.key === 'r' || e.key === 'R') { vote(false); }
   });
 })();
 </script>

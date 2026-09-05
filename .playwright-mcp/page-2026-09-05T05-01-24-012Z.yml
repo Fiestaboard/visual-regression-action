@@ -1,0 +1,78 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - heading "🎨 Visual regression report" [level=1] [ref=e3]
+    - button "Review 3 changes" [active] [ref=e4] [cursor=pointer]
+    - button "🔄 Changed · 1" [pressed] [ref=e5] [cursor=pointer]
+    - button "✨ Added · 1" [pressed] [ref=e6] [cursor=pointer]
+    - button "🗑️ Removed · 1" [pressed] [ref=e7] [cursor=pointer]
+    - button "✅ Unchanged · 1" [pressed] [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - text: Fiestaboard/demo · commit abc1234 ·
+      - link "workflow run" [ref=e10] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/1
+      - text: · baseline from
+      - link "this run" [ref=e11] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/0
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: 🔄 Changed
+        - heading "home.png" [level=3] [ref=e16]
+        - generic [ref=e17]: 1.95%
+        - button "Expand ⤢" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - tablist [ref=e20]:
+          - tab "Swipe" [selected] [ref=e21] [cursor=pointer]
+          - tab "Overlay" [ref=e22] [cursor=pointer]
+          - tab "Side-by-side" [ref=e23] [cursor=pointer]
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - img "current" [ref=e26]
+            - img "baseline" [ref=e27]
+            - generic [aria-hidden] [ref=e28]: ◂ ▸
+          - slider "swipe position" [ref=e29]: "50"
+          - paragraph [ref=e30]: "left of the line: baseline · right: current"
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]: ✨ Added
+        - heading "dashboard.png" [level=3] [ref=e34]
+        - button "Expand ⤢" [ref=e35] [cursor=pointer]
+      - figure "Current (new)" [ref=e37]:
+        - img "current (new)" [ref=e39]
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]: 🗑️ Removed
+        - heading "profile.png" [level=3] [ref=e43]
+        - button "Expand ⤢" [ref=e44] [cursor=pointer]
+      - figure "Baseline (removed)" [ref=e46]:
+        - img "baseline (removed)" [ref=e48]
+    - generic [ref=e50]:
+      - generic [ref=e51]: ✅ Unchanged
+      - heading "settings.png" [level=3] [ref=e52]
+  - generic [ref=e53]:
+    - generic [ref=e54]:
+      - generic [ref=e55]: 1 / 3
+      - generic [ref=e56]: home.png
+      - generic [ref=e57]: 1.95% changed
+      - button "Approve A" [ref=e58] [cursor=pointer]
+      - button "Reject R" [ref=e59] [cursor=pointer]
+      - generic [ref=e60]: 0 approved · 0 rejected · 2 left
+      - tablist [ref=e61]:
+        - tab "Swipe S" [selected] [ref=e62] [cursor=pointer]
+        - tab "Overlay O" [ref=e63] [cursor=pointer]
+        - tab "Side-by-side D" [ref=e64] [cursor=pointer]
+      - button "Close Esc" [ref=e65] [cursor=pointer]
+    - generic [ref=e66]:
+      - button "previous screenshot" [ref=e67] [cursor=pointer]:
+        - text: ‹
+        - generic [ref=e68]: ←
+      - generic [ref=e71]:
+        - img "current" [ref=e72]
+        - img "baseline" [ref=e73]
+        - generic [aria-hidden] [ref=e74]: ◂ ▸
+      - button "next screenshot" [ref=e75] [cursor=pointer]:
+        - text: ›
+        - generic [ref=e76]: →
+    - generic [ref=e77]:
+      - slider "swipe position" [ref=e78]: "50"
+      - generic [ref=e79]: scroll to zoom · drag to pan · double-click resets

@@ -85097,6 +85097,159 @@ ZipStream.prototype.finalize = function() {
 
 /***/ }),
 
+/***/ 28175:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shortHash = shortHash;
+exports.isApproveComment = isApproveComment;
+exports.parseApprovalCommands = parseApprovalCommands;
+exports.applyApprovals = applyApprovals;
+const crypto_1 = __nccwpck_require__(76982);
+/** Associations allowed to approve visual changes via PR comment. */
+const AUTHORIZED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+/** 12-hex-char content hash used to pin an approval to exact pixels. */
+function shortHash(buf) {
+    return (0, crypto_1.createHash)('sha256').update(buf).digest('hex').slice(0, 12);
+}
+function isApproveComment(body) {
+    return /^\s*\/vrt\s+approve\b/.test(body);
+}
+function parseApprovalCommands(comments) {
+    const entries = new Map();
+    const allShas = [];
+    for (const c of comments) {
+        if (!c.body || !isApproveComment(c.body) || !AUTHORIZED.has(c.author_association ?? ''))
+            continue;
+        const tokens = c.body.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
+        for (const token of tokens) {
+            const at = token.lastIndexOf('@');
+            if (at <= 0 || at === token.length - 1)
+                continue;
+            const name = token.slice(0, at);
+            const pin = token.slice(at + 1).toLowerCase();
+            if (name === 'all') {
+                if (/^[0-9a-f]{7,40}$/.test(pin))
+                    allShas.push(pin);
+            }
+            else if (/^[0-9a-f]{12}$/.test(pin)) {
+                const list = entries.get(name) ?? [];
+                list.push(pin);
+                entries.set(name, list);
+            }
+        }
+    }
+    return { entries, allShas };
+}
+/**
+ * Marks changed/removed screenshots as approved when a comment pinned their
+ * exact content (or the whole head sha). Returns the approved count.
+ */
+function applyApprovals(summary, approvals, headSha) {
+    const headMatch = approvals.allShas.some((s) => headSha.toLowerCase().startsWith(s));
+    let approved = 0;
+    for (const r of summary.results) {
+        if (r.status !== 'changed' && r.status !== 'removed')
+            continue;
+        const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
+        if (!buf)
+            continue;
+        if (headMatch || (approvals.entries.get(r.name) ?? []).includes(shortHash(buf))) {
+            r.approved = true;
+            approved++;
+        }
+    }
+    return approved;
+}
+
+
+/***/ }),
+
+/***/ 69090:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.findVrtRunsToRerun = findVrtRunsToRerun;
+exports.rerunFailedJobs = rerunFailedJobs;
+exports.reactToComment = reactToComment;
+const core = __importStar(__nccwpck_require__(37484));
+/**
+ * Failed, completed runs on the PR head that uploaded a vrt-report artifact —
+ * i.e. the visual-regression checks worth rerunning after an approval.
+ */
+async function findVrtRunsToRerun(octokit, owner, repo, headSha) {
+    const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
+    const failed = data.workflow_runs.filter((r) => r.status === 'completed' && r.conclusion === 'failure');
+    const out = [];
+    for (const r of failed) {
+        const { data: arts } = await octokit.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: r.id });
+        if (arts.artifacts.some((a) => a.name.startsWith('vrt-report')))
+            out.push(r.id);
+    }
+    return out;
+}
+async function rerunFailedJobs(octokit, owner, repo, runId) {
+    await octokit.request('POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs', {
+        owner,
+        repo,
+        run_id: runId,
+    });
+}
+/** Best-effort 🚀 reaction on the approval comment so the commenter sees it landed. */
+async function reactToComment(octokit, owner, repo, commentId) {
+    try {
+        await octokit.request('POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions', {
+            owner,
+            repo,
+            comment_id: commentId,
+            content: 'rocket',
+        });
+    }
+    catch (err) {
+        core.warning(`Could not react to the approval comment: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
+
+
+/***/ }),
+
 /***/ 89860:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -85232,6 +85385,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.COMMENT_MARKER = void 0;
 exports.commentMarker = commentMarker;
+exports.listPrComments = listPrComments;
 exports.upsertStickyComment = upsertStickyComment;
 const core = __importStar(__nccwpck_require__(37484));
 exports.COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
@@ -85249,6 +85403,17 @@ async function findMarkedComment(octokit, owner, repo, prNumber, marker) {
             return undefined;
     }
     return undefined;
+}
+/** All PR comments (paginated, capped) — used to collect /vrt approve commands. */
+async function listPrComments(octokit, owner, repo, prNumber) {
+    const out = [];
+    for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+        out.push(...data);
+        if (data.length < 100)
+            break;
+    }
+    return out;
 }
 async function upsertStickyComment(octokit, owner, repo, prNumber, body, key) {
     const marker = commentMarker(key);
@@ -85459,10 +85624,11 @@ const mode_1 = __nccwpck_require__(89120);
 const diff_1 = __nccwpck_require__(19952);
 const report_1 = __nccwpck_require__(70665);
 const comment_1 = __nccwpck_require__(62246);
+const approvals_1 = __nccwpck_require__(28175);
+const approve_1 = __nccwpck_require__(69090);
 const baseline_1 = __nccwpck_require__(89860);
 const KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 async function run() {
-    const screenshotsDir = core.getInput('screenshots-dir', { required: true });
     const token = core.getInput('github-token', { required: true });
     const key = core.getInput('key');
     if (key && !KEY_PATTERN.test(key)) {
@@ -85491,6 +85657,11 @@ async function run() {
     const defaultBranch = ctx.payload.repository?.default_branch ?? 'main';
     const mode = (0, mode_1.resolveMode)(core.getInput('mode') || 'auto', ctx.eventName, ctx.ref, defaultBranch);
     core.info(`Mode: ${mode}`);
+    if (mode === 'approve') {
+        await runApproveMode(token, owner, repo);
+        return;
+    }
+    const screenshotsDir = core.getInput('screenshots-dir', { required: true });
     if (!fs.existsSync(screenshotsDir)) {
         throw new Error(`screenshots-dir "${screenshotsDir}" does not exist.`);
     }
@@ -85518,13 +85689,28 @@ async function run() {
         threshold,
         diffRatio,
     });
+    const prNumber = ctx.payload.pull_request?.number;
+    const headSha = ctx.payload.pull_request?.head?.sha ?? ctx.sha;
+    let approved = 0;
+    if (prNumber && summary.hasChanges) {
+        try {
+            const comments = await (0, comment_1.listPrComments)(octokit, owner, repo, prNumber);
+            approved = (0, approvals_1.applyApprovals)(summary, (0, approvals_1.parseApprovalCommands)(comments), headSha);
+            if (approved > 0)
+                core.info(`${approved} visual change(s) approved via /vrt approve comments.`);
+        }
+        catch (err) {
+            core.warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     const meta = {
         repo: `${owner}/${repo}`,
         runUrl: `https://github.com/${owner}/${repo}/actions/runs/${ctx.runId}`,
-        sha: ctx.payload.pull_request?.head?.sha ?? ctx.sha,
+        sha: headSha,
         baselineRunUrl: ref?.runUrl,
         missingBaseline: !ref,
         reportArtifactName: (0, baseline_1.reportArtifactName)(key),
+        prUrl: prNumber ? `https://github.com/${owner}/${repo}/pull/${prNumber}` : undefined,
     };
     let reportPath = '';
     try {
@@ -85554,7 +85740,6 @@ async function run() {
     catch (err) {
         core.warning(`Could not write step summary: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const prNumber = ctx.payload.pull_request?.number;
     if (comment && prNumber) {
         await (0, comment_1.upsertStickyComment)(octokit, owner, repo, prNumber, md, key);
     }
@@ -85562,14 +85747,57 @@ async function run() {
     core.setOutput('added', String(summary.added));
     core.setOutput('removed', String(summary.removed));
     core.setOutput('unchanged', String(summary.unchanged));
+    core.setOutput('approved', String(approved));
     core.setOutput('has-changes', String(summary.hasChanges));
     core.setOutput('report-path', reportPath);
     core.info(`Compared ${summary.results.length} screenshot(s): ` +
-        `${summary.changed} changed, ${summary.added} added, ${summary.removed} removed, ${summary.unchanged} unchanged.`);
-    if (failOnDiff && summary.hasChanges) {
-        core.setFailed(`Visual changes detected: ${summary.changed} changed, ${summary.removed} removed. ` +
-            `Download the "${(0, baseline_1.reportArtifactName)(key)}" artifact to review. Merging this PR updates the baselines.`);
+        `${summary.changed} changed, ${summary.added} added, ${summary.removed} removed, ` +
+        `${summary.unchanged} unchanged, ${approved} approved.`);
+    const unapproved = summary.changed + summary.removed - approved;
+    if (failOnDiff && unapproved > 0) {
+        core.setFailed(`Visual changes detected: ${summary.changed} changed, ${summary.removed} removed (${approved} approved). ` +
+            `Download the "${(0, baseline_1.reportArtifactName)(key)}" artifact to review. To accept intentional changes, use the ` +
+            `report's reviewer to generate a "/vrt approve" command and post it as a PR comment. Merging updates the baselines.`);
     }
+    else if (failOnDiff && summary.hasChanges) {
+        core.info('All visual changes are approved — passing.');
+    }
+}
+async function runApproveMode(token, owner, repo) {
+    const ctx = github.context;
+    const commentBody = ctx.payload.comment?.body ?? '';
+    const commentId = ctx.payload.comment?.id;
+    const association = ctx.payload.comment?.author_association ?? '';
+    const prNumber = ctx.payload.issue?.number;
+    if (!ctx.payload.issue?.pull_request) {
+        core.info('Comment is not on a pull request — nothing to do.');
+        return;
+    }
+    if (!(0, approvals_1.isApproveComment)(commentBody)) {
+        core.info('Comment is not a /vrt approve command — nothing to do.');
+        return;
+    }
+    if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association)) {
+        core.notice(`Ignoring /vrt approve from author_association "${association}" — approvals require write access.`);
+        return;
+    }
+    if (!prNumber) {
+        core.info('No PR number in the event payload — nothing to do.');
+        return;
+    }
+    const octokit = github.getOctokit(token);
+    const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
+    const runs = await (0, approve_1.findVrtRunsToRerun)(octokit, owner, repo, pr.head.sha);
+    if (runs.length === 0) {
+        core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
+        return;
+    }
+    for (const runId of runs) {
+        await (0, approve_1.rerunFailedJobs)(octokit, owner, repo, runId);
+        core.info(`Rerunning failed jobs of run ${runId} to re-evaluate approvals.`);
+    }
+    if (commentId)
+        await (0, approve_1.reactToComment)(octokit, owner, repo, commentId);
 }
 run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
 
@@ -85584,30 +85812,33 @@ run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.resolveMode = resolveMode;
 function resolveMode(modeInput, eventName, ref, defaultBranch) {
-    if (modeInput === 'baseline' || modeInput === 'compare')
+    if (modeInput === 'baseline' || modeInput === 'compare' || modeInput === 'approve')
         return modeInput;
     if (modeInput !== 'auto') {
-        throw new Error(`Invalid mode "${modeInput}". Use "auto", "baseline", or "compare".`);
+        throw new Error(`Invalid mode "${modeInput}". Use "auto", "baseline", "compare", or "approve".`);
     }
     if (eventName === 'pull_request' || eventName === 'pull_request_target')
         return 'compare';
     if (eventName === 'push' && ref === `refs/heads/${defaultBranch}`)
         return 'baseline';
+    if (eventName === 'issue_comment')
+        return 'approve';
     throw new Error(`Cannot auto-detect mode for event "${eventName}" on ref "${ref}". ` +
-        `Set an explicit mode: "baseline" or "compare".`);
+        `Set an explicit mode: "baseline", "compare", or "approve".`);
 }
 
 
 /***/ }),
 
 /***/ 70665:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.generateMarkdownSummary = generateMarkdownSummary;
 exports.generateHtmlReport = generateHtmlReport;
+const approvals_1 = __nccwpck_require__(28175);
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const escPipe = (s) => s.replace(/\|/g, '\\|');
 const pct = (ratio) => `${(ratio * 100).toFixed(2)}%`;
@@ -85629,14 +85860,20 @@ function generateMarkdownSummary(summary, meta) {
         lines.push(`✅ **No visual changes** across ${summary.unchanged} screenshot(s).`, '');
     }
     else {
-        lines.push(`**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged**`, '');
+        const approvedCount = summary.results.filter((r) => r.approved).length;
+        const approvedNote = approvedCount > 0 ? ` · ${approvedCount} approved` : '';
+        lines.push(`**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged${approvedNote}**`, '');
+        if (approvedCount > 0 && approvedCount === summary.changed + summary.removed) {
+            lines.push('✅ **All visual changes approved** via `/vrt approve`.', '');
+        }
     }
     const notable = summary.results.filter((r) => r.status !== 'unchanged').slice(0, 50);
     if (notable.length > 0) {
         lines.push('| Status | Screenshot | Diff |', '|---|---|---|');
         for (const r of notable) {
             const diff = r.status === 'changed' ? pct(r.diffRatio) : '—';
-            lines.push(`| ${STATUS_LABEL[r.status]} | \`${escPipe(r.name)}\` | ${diff} |`);
+            const label = r.approved ? `${STATUS_LABEL[r.status]} · ✅ approved` : STATUS_LABEL[r.status];
+            lines.push(`| ${label} | \`${escPipe(r.name)}\` | ${diff} |`);
         }
         const hidden = summary.results.filter((r) => r.status !== 'unchanged').length - notable.length;
         if (hidden > 0)
@@ -85658,11 +85895,13 @@ function generateMarkdownSummary(summary, meta) {
 // <img> (swipe views, the fullscreen reviewer) is populated at load by
 // copying those srcs — see the inline script.
 function changedCard(r) {
+    const hash = r.currentPng ? (0, approvals_1.shortHash)(r.currentPng) : '';
     return `
-  <section class="card" data-status="changed">
+  <section class="card" data-status="changed"${hash ? ` data-hash="${hash}"` : ''}>
     <header>
       <span class="badge changed">${STATUS_LABEL.changed}</span>
       <h3>${esc(r.name)}</h3>
+      ${r.approved ? '<span class="okchip">✓ approved</span>' : ''}
       <span class="stat">${pct(r.diffRatio)}</span>
       <button class="expand" data-open type="button">Expand ⤢</button>
     </header>
@@ -85703,11 +85942,13 @@ function simpleCard(r) {
         ? `<img class="shot-current" src="${dataUri(r.currentPng)}" alt="current (new)">`
         : `<img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline (removed)">`;
     const caption = r.status === 'added' ? 'Current (new)' : 'Baseline (removed)';
+    const hash = r.status === 'removed' && r.baselinePng ? (0, approvals_1.shortHash)(r.baselinePng) : '';
     return `
-  <section class="card" data-status="${r.status}">
+  <section class="card" data-status="${r.status}"${hash ? ` data-hash="${hash}"` : ''}>
     <header>
       <span class="badge ${r.status}">${STATUS_LABEL[r.status]}</span>
       <h3>${esc(r.name)}</h3>
+      ${r.approved ? '<span class="okchip">✓ approved</span>' : ''}
       <button class="expand" data-open type="button">Expand ⤢</button>
     </header>
     <div class="single"><figure><figcaption>${caption}</figcaption>${img}</figure></div>
@@ -85827,6 +86068,23 @@ function generateHtmlReport(summary, meta) {
   .lightbox .tab[aria-selected="true"] { background:#e8e8e8; color:#111; border-color:#e8e8e8 }
   button.lb-close { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
     border-radius:8px; padding:4px 12px; font-size:13px }
+  .okchip { border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600;
+    background:var(--unchanged-bg); color:var(--unchanged); white-space:nowrap }
+  button.vote { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
+    border-radius:8px; padding:4px 12px; font-size:13px }
+  button.vote.approve[aria-pressed="true"] { background:#15803d; border-color:#15803d; color:#fff }
+  button.vote.reject[aria-pressed="true"] { background:#b91c1c; border-color:#b91c1c; color:#fff }
+  .lb-tally { color:#9a9a9a; font-size:13px; font-variant-numeric:tabular-nums }
+  .cmdbar { position:fixed; left:0; right:0; bottom:0; z-index:12; display:flex; gap:10px;
+    align-items:center; flex-wrap:wrap; padding:12px 20px; background:var(--card);
+    border-top:2px solid var(--hot); box-shadow:0 -4px 16px rgba(0,0,0,.15) }
+  .cmdbar[hidden] { display:none }
+  .cmdbar .hint { font-size:13px; color:var(--muted) }
+  .cmdbar input { flex:1 1 320px; min-width:0; font:13px ui-monospace,Menlo,monospace;
+    padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+    background:var(--bg); color:var(--fg) }
+  .cmdbar .copy, .cmdbar a.pr { border:0; background:var(--hot); color:#fff; border-radius:8px;
+    padding:8px 16px; font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap }
   .lb-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:11;
     display:flex; flex-direction:column; align-items:center; gap:6px;
     border:1px solid #3a3d44; background:rgba(27,29,33,.9); color:#e8e8e8;
@@ -85868,6 +86126,9 @@ ${ordered.map(card).join('\n')}
     <span class="lb-count"></span>
     <span class="lb-name"></span>
     <span class="lb-stat"></span>
+    <button class="vote approve" type="button" aria-pressed="false">Approve <kbd>A</kbd></button>
+    <button class="vote reject" type="button" aria-pressed="false">Reject <kbd>R</kbd></button>
+    <span class="lb-tally"></span>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-mode="swipe" type="button">Swipe <kbd>S</kbd></button>
       <button class="tab" role="tab" data-mode="overlay" type="button">Overlay <kbd>O</kbd></button>
@@ -85884,6 +86145,12 @@ ${ordered.map(card).join('\n')}
     <input class="scrub" type="range" min="0" max="100" value="50" aria-label="swipe position">
     <span>scroll to zoom · drag to pan · double-click resets</span>
   </div>
+</div>
+<div class="cmdbar" hidden>
+  <span class="hint">Post this as a PR comment to accept the approved changes:</span>
+  <input class="cmd" readonly aria-label="approval command">
+  <button class="copy" type="button">Copy</button>
+  ${meta.prUrl ? `<a class="pr" href="${esc(meta.prUrl)}">Open PR ↗</a>` : ''}
 </div>
 <script>
 (function () {
@@ -85944,6 +86211,41 @@ ${ordered.map(card).join('\n')}
   var zoomWrap = lb.querySelector('.lb-zoom');
   var lbScrub = lb.querySelector('.lb-foot .scrub');
   var idx = 0, scale = 1, tx = 0, ty = 0, mode = 'swipe';
+  var decisions = cards.map(function () { return null; });
+  var voteA = lb.querySelector('.vote.approve');
+  var voteR = lb.querySelector('.vote.reject');
+  var cmdbar = document.querySelector('.cmdbar');
+  var cmdInput = cmdbar.querySelector('.cmd');
+  function votableCards() {
+    return cards.filter(function (c) { return c.getAttribute('data-hash'); });
+  }
+  function updateTally() {
+    var total = votableCards().length;
+    var yes = 0, no = 0;
+    cards.forEach(function (c, i) {
+      if (!c.getAttribute('data-hash')) return;
+      if (decisions[i] === true) yes++;
+      if (decisions[i] === false) no++;
+    });
+    lb.querySelector('.lb-tally').textContent =
+      total ? yes + ' approved · ' + no + ' rejected · ' + (total - yes - no) + ' left' : '';
+  }
+  function updateCmdbar() {
+    var entries = [];
+    cards.forEach(function (c, i) {
+      var h = c.getAttribute('data-hash');
+      if (h && decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
+    });
+    cmdbar.hidden = entries.length === 0;
+    if (entries.length) cmdInput.value = '/vrt approve ' + entries.join(' ');
+  }
+  function vote(v) {
+    if (!cards[idx].getAttribute('data-hash')) return;
+    decisions[idx] = decisions[idx] === v ? null : v;
+    updateCmdbar();
+    resetZoom();
+    show(decisions[idx] === null ? idx : idx + 1);
+  }
   function apply() {
     canvas.style.transform = 'translate(-50%,-50%) translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
   }
@@ -85962,6 +86264,12 @@ ${ordered.map(card).join('\n')}
       t.setAttribute('aria-selected', String(changed && t.dataset.mode === mode));
     });
     lbScrub.style.display = changed && mode === 'swipe' ? '' : 'none';
+    var votable = !!c.getAttribute('data-hash');
+    voteA.style.display = votable ? '' : 'none';
+    voteR.style.display = votable ? '' : 'none';
+    voteA.setAttribute('aria-pressed', String(decisions[idx] === true));
+    voteR.setAttribute('aria-pressed', String(decisions[idx] === false));
+    updateTally();
     var src = function (sel) { var el = c.querySelector(sel); return el ? el.src : ''; };
     var w = 'min(88vw, 1400px)';
     var html;
@@ -85995,6 +86303,17 @@ ${ordered.map(card).join('\n')}
   lb.querySelector('.lb-close').addEventListener('click', close);
   lb.querySelector('.lb-nav.prev').addEventListener('click', function () { resetZoom(); show(idx - 1); });
   lb.querySelector('.lb-nav.next').addEventListener('click', function () { resetZoom(); show(idx + 1); });
+  voteA.addEventListener('click', function () { vote(true); });
+  voteR.addEventListener('click', function () { vote(false); });
+  cmdbar.querySelector('.copy').addEventListener('click', function () {
+    var btn = cmdbar.querySelector('.copy');
+    var done = function () { btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmdInput.value).then(done, function () { cmdInput.select(); });
+    } else {
+      cmdInput.select();
+    }
+  });
   document.addEventListener('dragstart', function (e) {
     if (e.target && e.target.tagName === 'IMG') e.preventDefault();
   });
@@ -86032,6 +86351,8 @@ ${ordered.map(card).join('\n')}
     else if (e.key === 's' || e.key === 'S') { mode = 'swipe'; show(idx); }
     else if (e.key === 'o' || e.key === 'O') { mode = 'overlay'; show(idx); }
     else if (e.key === 'd' || e.key === 'D') { mode = 'sbs'; show(idx); }
+    else if (e.key === 'a' || e.key === 'A') { vote(true); }
+    else if (e.key === 'r' || e.key === 'R') { vote(false); }
   });
 })();
 </script>

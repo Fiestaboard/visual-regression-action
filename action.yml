@@ -10,13 +10,15 @@ branding:
 
 inputs:
   screenshots-dir:
-    description: 'Directory containing the captured PNG screenshots'
-    required: true
+    description: 'Directory containing the captured PNG screenshots (not used in approve mode)'
+    required: false
   github-token:
     description: 'Token used to look up/download baseline artifacts and post the PR comment'
     default: ${{ github.token }}
   mode:
-    description: 'auto | baseline | compare. auto = pull requests compare, pushes to the default branch publish baselines'
+    description: >-
+      auto | baseline | compare | approve. auto = pull requests compare, pushes to the
+      default branch publish baselines, issue_comment events process /vrt approve commands
     default: 'auto'
   key:
     description: 'Optional suffix for artifact names — use for matrix builds or multiple apps in one repo'
@@ -49,6 +51,8 @@ outputs:
     description: 'Number of removed screenshots'
   unchanged:
     description: 'Number of unchanged screenshots'
+  approved:
+    description: 'Number of changed/removed screenshots accepted via /vrt approve comments'
   has-changes:
     description: 'true when changed + removed > 0'
   report-path:

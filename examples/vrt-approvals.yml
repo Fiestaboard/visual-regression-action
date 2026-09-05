@@ -1,0 +1,25 @@
+# Auto-rerun the visual check when someone posts "/vrt approve ..." on a PR.
+# Add this alongside your visual-test workflow. When an authorized reviewer
+# (OWNER/MEMBER/COLLABORATOR) posts the command the report generated, this
+# reruns the failed visual check, which re-reads the approvals and goes green.
+name: VRT approvals
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/vrt approve') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write        # rerun the failed visual check
+      issues: write         # 🚀 reaction on the approval comment
+    steps:
+      - uses: fiestaboard/visual-regression-action@v1
+        with:
+          mode: approve

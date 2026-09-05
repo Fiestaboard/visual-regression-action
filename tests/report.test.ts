@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateHtmlReport, generateMarkdownSummary, ReportMeta } from '../src/report';
+import { shortHash } from '../src/approvals';
 import { CompareSummary } from '../src/types';
 
 const meta: ReportMeta = {
@@ -154,6 +155,31 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('Close <kbd>Esc</kbd>');
     expect(html).toContain('user-select:none');
     expect(html).toContain('dragstart');
+  });
+
+  it('stamps approvable cards with content hashes and ships the approval command bar', () => {
+    const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7' });
+    expect(html).toContain(`data-hash="${shortHash(png)}"`); // changed + removed cards
+    expect(html).toContain('class="cmdbar"');
+    expect(html).toContain('/vrt approve');
+    expect(html).toContain('Approve <kbd>A</kbd>');
+    expect(html).toContain('Reject <kbd>R</kbd>');
+    expect(html).toContain('https://github.com/Fiestaboard/demo/pull/7');
+  });
+
+  it('shows the approved chip on approved results', () => {
+    const s = summary();
+    s.results[3].approved = true; // home.png (changed)
+    const html = generateHtmlReport(s, meta);
+    expect(html).toContain('✓ approved');
+  });
+
+  it('marks approved rows in the markdown summary', () => {
+    const s = summary();
+    s.results[3].approved = true;
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain('· 1 approved');
+    expect(md).toContain('✅ approved');
   });
 
   it('omits the review button when nothing is reviewable', () => {

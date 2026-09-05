@@ -1,0 +1,24 @@
+# Dogfood of approve mode: "/vrt approve ..." comments on our own PRs rerun
+# the failed Visual demo check, which then honors the approvals.
+name: VRT approvals
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/vrt approve') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          mode: approve

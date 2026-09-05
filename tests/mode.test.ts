@@ -20,6 +20,14 @@ describe('resolveMode', () => {
     expect(() => resolveMode('auto', 'push', 'refs/heads/feature', 'main')).toThrow(/explicit/i);
   });
 
+  it('auto: issue_comment events resolve to approve', () => {
+    expect(resolveMode('auto', 'issue_comment', 'refs/heads/main', 'main')).toBe('approve');
+  });
+
+  it('explicit approve mode is honored', () => {
+    expect(resolveMode('approve', 'workflow_dispatch', 'refs/heads/main', 'main')).toBe('approve');
+  });
+
   it('auto: other events throw', () => {
     expect(() => resolveMode('auto', 'workflow_dispatch', 'refs/heads/main', 'main')).toThrow(/explicit/i);
   });
