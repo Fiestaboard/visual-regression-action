@@ -151,8 +151,8 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
         `<button class="filter" aria-pressed="true" data-status="${k}" onclick="toggle(this)">${STATUS_LABEL[k]} · ${n}</button>`
     )
     .join('\n  ')}
-  <div class="meta">${esc(meta.repo)} · commit ${esc(meta.sha.slice(0, 7))} · <a href="${meta.runUrl}">workflow run</a>${
-    meta.baselineRunUrl ? ` · baseline from <a href="${meta.baselineRunUrl}">this run</a>` : ''
+  <div class="meta">${esc(meta.repo)} · commit ${esc(meta.sha.slice(0, 7))} · <a href="${esc(meta.runUrl)}">workflow run</a>${
+    meta.baselineRunUrl ? ` · baseline from <a href="${esc(meta.baselineRunUrl)}">this run</a>` : ''
   }${meta.missingBaseline ? ' · ⚠️ no baseline found — everything is new' : ''}</div>
 </div>
 <main>
