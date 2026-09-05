@@ -22,6 +22,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # manual "Run workflow" republishes the baseline
 
 permissions:
   contents: read
@@ -184,6 +185,15 @@ permissions:
 
 **Why is my check red after an intentional visual change?**
 That's the design: a changed or removed screenshot fails the job by default (`fail-on-diff: true`) so the change gets a deliberate look before merge. To accept it, use the [approval flow](#approving-changes) — review in the report, post the generated `/vrt approve` command, and the check goes green. Once merged, the default branch rebuilds and publishes the new baseline automatically. If you'd rather never fail the check, run [report-only mode](#recipes) and branch on `has-changes` instead.
+
+**What if the baseline expired or got deleted?**
+Nothing breaks — compares report everything as "new" and pass with a note until a baseline exists again. To republish one on demand, keep `workflow_dispatch:` in your workflow's triggers and hit "Run workflow" on your default branch (manual runs and `schedule` runs publish baselines in auto mode). Quiet repo? Add a monthly cron so the baseline never ages out of artifact retention:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 6 1 * *'  # monthly baseline keep-alive
+```
 
 **What happens on the very first run?**
 There's no baseline artifact yet, so every screenshot reports as "new." The job passes with a note. The first push to your default branch after that publishes the initial baseline, and PRs after that compare normally.

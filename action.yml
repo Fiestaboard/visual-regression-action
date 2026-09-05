@@ -17,8 +17,9 @@ inputs:
     default: ${{ github.token }}
   mode:
     description: >-
-      auto | baseline | compare | approve. auto = pull requests compare, pushes to the
-      default branch publish baselines, issue_comment events process /vrt approve commands
+      auto | baseline | compare | approve. auto = pull requests compare; pushes to the
+      default branch, manual workflow_dispatch runs, and schedule runs publish baselines;
+      issue_comment events process /vrt approve commands
     default: 'auto'
   key:
     description: 'Optional suffix for artifact names — use for matrix builds or multiple apps in one repo'

@@ -85821,6 +85821,11 @@ function resolveMode(modeInput, eventName, ref, defaultBranch) {
         return 'compare';
     if (eventName === 'push' && ref === `refs/heads/${defaultBranch}`)
         return 'baseline';
+    // Manual runs and crons exist to (re)publish baselines: a lost/expired
+    // baseline is recovered from the Actions tab, and a schedule keeps
+    // baselines alive on quiet repos.
+    if (eventName === 'workflow_dispatch' || eventName === 'schedule')
+        return 'baseline';
     if (eventName === 'issue_comment')
         return 'approve';
     throw new Error(`Cannot auto-detect mode for event "${eventName}" on ref "${ref}". ` +

@@ -20,6 +20,12 @@ describe('resolveMode', () => {
     expect(() => resolveMode('auto', 'push', 'refs/heads/feature', 'main')).toThrow(/explicit/i);
   });
 
+  it('auto: workflow_dispatch and schedule publish baselines (recovery + keep-alive)', () => {
+    expect(resolveMode('auto', 'workflow_dispatch', 'refs/heads/main', 'main')).toBe('baseline');
+    expect(resolveMode('auto', 'workflow_dispatch', 'refs/heads/release', 'main')).toBe('baseline');
+    expect(resolveMode('auto', 'schedule', 'refs/heads/main', 'main')).toBe('baseline');
+  });
+
   it('auto: issue_comment events resolve to approve', () => {
     expect(resolveMode('auto', 'issue_comment', 'refs/heads/main', 'main')).toBe('approve');
   });
@@ -29,7 +35,7 @@ describe('resolveMode', () => {
   });
 
   it('auto: other events throw', () => {
-    expect(() => resolveMode('auto', 'workflow_dispatch', 'refs/heads/main', 'main')).toThrow(/explicit/i);
+    expect(() => resolveMode('auto', 'release', 'refs/tags/v1.0.0', 'main')).toThrow(/explicit/i);
   });
 
   it('invalid mode input throws', () => {
