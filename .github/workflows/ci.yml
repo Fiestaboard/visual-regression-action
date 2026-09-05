@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Verify dist is up to date
+        run: |
+          if ! git diff --quiet dist/; then
+            echo "::error::dist/ is stale. Run 'npm run build' and commit the result."
+            git diff --stat dist/
+            exit 1
+          fi
+
+  e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Generate fixtures
+        run: node scripts/make-e2e-fixtures.mjs
+
+      - name: Publish baseline (dogfood)
+        uses: ./
+        with:
+          mode: baseline
+          screenshots-dir: e2e-tmp/base
+          key: e2e-${{ github.run_id }}
+          retention-days: 1
+
+      - name: Compare against baseline (dogfood)
+        id: compare
+        uses: ./
+        with:
+          mode: compare
+          screenshots-dir: e2e-tmp/changed
+          key: e2e-${{ github.run_id }}
+          baseline-branch: ${{ github.head_ref || github.ref_name }}
+          fail-on-diff: false
+          comment: false
+          retention-days: 1
+
+      - name: Assert outputs
+        env:
+          CHANGED: ${{ steps.compare.outputs.changed }}
+          ADDED: ${{ steps.compare.outputs.added }}
+          REMOVED: ${{ steps.compare.outputs.removed }}
+          UNCHANGED: ${{ steps.compare.outputs.unchanged }}
+          HAS_CHANGES: ${{ steps.compare.outputs.has-changes }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [ "$CHANGED" = "1" ] || fail "expected changed=1, got '$CHANGED'"
+          [ "$ADDED" = "1" ] || fail "expected added=1, got '$ADDED'"
+          [ "$REMOVED" = "1" ] || fail "expected removed=1, got '$REMOVED'"
+          [ "$UNCHANGED" = "1" ] || fail "expected unchanged=1, got '$UNCHANGED'"
+          [ "$HAS_CHANGES" = "true" ] || fail "expected has-changes=true, got '$HAS_CHANGES'"
+          echo "e2e assertions passed ✅"
