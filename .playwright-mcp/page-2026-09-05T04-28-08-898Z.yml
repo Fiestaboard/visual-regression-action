@@ -1,0 +1,70 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - heading "🎨 Visual regression report" [level=1] [ref=f1e3]
+    - button "Review 3 changes" [active] [ref=f1e4] [cursor=pointer]
+    - button "🔄 Changed · 1" [pressed] [ref=f1e5] [cursor=pointer]
+    - button "✨ Added · 1" [pressed] [ref=f1e6] [cursor=pointer]
+    - button "🗑️ Removed · 1" [pressed] [ref=f1e7] [cursor=pointer]
+    - button "✅ Unchanged · 1" [pressed] [ref=f1e8] [cursor=pointer]
+    - generic [ref=f1e9]:
+      - text: Fiestaboard/demo · commit abc1234 ·
+      - link "workflow run" [ref=f1e10] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/1
+      - text: · baseline from
+      - link "this run" [ref=f1e11] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/0
+  - main [ref=f1e12]:
+    - generic [ref=f1e13]:
+      - generic [ref=f1e14]:
+        - generic [ref=f1e15]: 🔄 Changed
+        - heading "home.png" [level=3] [ref=f1e16]
+        - generic [ref=f1e17]: 1.95%
+        - button "Expand ⤢" [ref=f1e18] [cursor=pointer]
+      - generic [ref=f1e19]:
+        - tablist [ref=f1e20]:
+          - tab "Swipe" [ref=f1e21] [cursor=pointer]
+          - tab "Overlay" [selected] [ref=f1e22] [cursor=pointer]
+          - tab "Side-by-side" [ref=f1e23] [cursor=pointer]
+        - text: ◂ ▸
+        - generic [ref=f1e53]:
+          - generic [ref=f1e54]:
+            - img "current" [ref=f1e55]
+            - img "changed pixels highlighted" [ref=f1e56]
+          - paragraph [ref=f1e57]: current screenshot · detected changes in pink
+    - generic [ref=f1e31]:
+      - generic [ref=f1e32]:
+        - generic [ref=f1e33]: ✨ Added
+        - heading "dashboard.png" [level=3] [ref=f1e34]
+        - button "Expand ⤢" [ref=f1e35] [cursor=pointer]
+      - figure "Current (new)" [ref=f1e37]:
+        - img "current (new)" [ref=f1e39]
+    - generic [ref=f1e40]:
+      - generic [ref=f1e41]:
+        - generic [ref=f1e42]: 🗑️ Removed
+        - heading "profile.png" [level=3] [ref=f1e43]
+        - button "Expand ⤢" [ref=f1e44] [cursor=pointer]
+      - figure "Baseline (removed)" [ref=f1e46]:
+        - img "baseline (removed)" [ref=f1e48]
+    - generic [ref=f1e50]:
+      - generic [ref=f1e51]: ✅ Unchanged
+      - heading "settings.png" [level=3] [ref=f1e52]
+  - generic [ref=f1e58]:
+    - generic [ref=f1e59]:
+      - generic [ref=f1e60]: 1 / 3
+      - generic [ref=f1e61]: home.png
+      - generic [ref=f1e62]: 1.95% changed
+      - tablist [ref=f1e63]:
+        - tab "Swipe" [selected] [ref=f1e64] [cursor=pointer]
+        - tab "Overlay" [ref=f1e65] [cursor=pointer]
+        - tab "Side-by-side" [ref=f1e66] [cursor=pointer]
+      - button "Close ✕" [ref=f1e67] [cursor=pointer]
+    - generic [ref=f1e70]:
+      - img "current" [ref=f1e71]
+      - img "baseline" [ref=f1e72]
+      - generic [aria-hidden] [ref=f1e73]: ◂ ▸
+    - generic [ref=f1e74]:
+      - slider "swipe position" [ref=f1e75]: "50"
+      - generic [ref=f1e76]: ← → screenshot
+      - generic [ref=f1e77]: S O D view
+      - generic [ref=f1e78]: scroll to zoom · drag to pan · double-click resets
+      - generic [ref=f1e79]: Esc close

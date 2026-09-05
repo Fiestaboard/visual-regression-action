@@ -106,7 +106,10 @@ async function run(): Promise<void> {
 
   if (reportPath) {
     try {
-      await uploadFileAsArtifact(reportArtifactName(key), reportPath, retentionDays);
+      const artifactId = await uploadFileAsArtifact(reportArtifactName(key), reportPath, retentionDays);
+      if (artifactId) {
+        meta.reportDownloadUrl = `${meta.runUrl}/artifacts/${artifactId}`;
+      }
     } catch (err) {
       core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
     }

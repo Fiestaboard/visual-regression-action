@@ -50,6 +50,18 @@ function compareOne(
   });
   const ratio = mismatched / (width * height);
   const changed = dimsMismatch || ratio > opts.diffRatio;
+  let diffMaskPng: Buffer | undefined;
+  if (changed) {
+    // Second pass with diffMask: only changed pixels are drawn (hot pink),
+    // everything else stays transparent — used as an overlay in the report.
+    const mask = new PNG({ width, height });
+    pixelmatch(a.data, b.data, mask.data, width, height, {
+      threshold: opts.threshold,
+      diffMask: true,
+      diffColor: [236, 72, 153],
+    });
+    diffMaskPng = PNG.sync.write(mask);
+  }
   return {
     name,
     status: changed ? 'changed' : 'unchanged',
@@ -57,6 +69,7 @@ function compareOne(
     baselinePng: changed ? baselineBuf : undefined,
     currentPng: changed ? currentBuf : undefined,
     diffPng: changed ? PNG.sync.write(diff) : undefined,
+    diffMaskPng,
   };
 }
 

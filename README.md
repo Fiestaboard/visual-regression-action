@@ -73,9 +73,9 @@ Baseline mode (a push to the default branch) sets no outputs — there's nothing
 
 Results surface in three places:
 
-1. **Sticky PR comment** — a pass/fail headline and a counts table, updated in place on every push (never spammed as a new comment each time).
+1. **Sticky PR comment** — a pass/fail headline, a counts table, and a direct download link for the report artifact, updated in place on every push (never spammed as a new comment each time).
 2. **`$GITHUB_STEP_SUMMARY`** — the same summary rendered on the workflow run page.
-3. **Downloadable `vrt-report[-<key>]` artifact** — a single self-contained `index.html` with baseline, current, and diff images side by side per screenshot, plus a swipe slider for changed images. No external requests; open it locally after downloading.
+3. **Downloadable `vrt-report[-<key>]` artifact** — a single self-contained `index.html`. Each changed screenshot gets a large comparison stage with three views: **Swipe** (drag a divider between baseline and current), **Overlay** (the current screenshot with detected changes highlighted in pink), and **Side-by-side** (baseline / current / diff thumbnails). A **fullscreen reviewer** steps through every change: `←`/`→` to move between screenshots, `S`/`O`/`D` to switch views, scroll to zoom, drag to pan, `Esc` to close. No external requests; open it locally after downloading.
 
 The report inlines every screenshot as a base64 data URI directly in the HTML, so very large suites (many or very large screenshots) produce a correspondingly large artifact — keep screenshots reasonably sized (e.g. viewport-cropped rather than full-page where possible) if this becomes a concern.
 

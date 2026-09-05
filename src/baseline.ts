@@ -82,7 +82,13 @@ export async function uploadDirectoryAsArtifact(name: string, dir: string, reten
   await client.uploadArtifact(name, files, dir, retentionDays ? { retentionDays } : {});
 }
 
-export async function uploadFileAsArtifact(name: string, filePath: string, retentionDays?: number): Promise<void> {
+/** Uploads one file; returns the artifact id (for direct download links) when the API provides it. */
+export async function uploadFileAsArtifact(
+  name: string,
+  filePath: string,
+  retentionDays?: number
+): Promise<number | undefined> {
   const client = new DefaultArtifactClient();
-  await client.uploadArtifact(name, [filePath], path.dirname(filePath), retentionDays ? { retentionDays } : {});
+  const res = await client.uploadArtifact(name, [filePath], path.dirname(filePath), retentionDays ? { retentionDays } : {});
+  return res.id;
 }

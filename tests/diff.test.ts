@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { PNG } from 'pngjs';
 import { compareDirectories, listPngs } from '../src/diff';
 import { makePng, makePngWithRect } from './helpers/png';
 
@@ -60,6 +61,27 @@ describe('compareDirectories', () => {
     expect(r.diffPng).toBeInstanceOf(Buffer);
     expect(r.baselinePng).toBeInstanceOf(Buffer);
     expect(r.currentPng).toBeInstanceOf(Buffer);
+  });
+
+  it('changed results carry a transparent diff mask marking only changed pixels', () => {
+    const { base, curr } = tmpDirs();
+    write(base, 'a.png', makePng(100, 100, WHITE));
+    write(curr, 'a.png', makePngWithRect(100, 100, WHITE, { x: 10, y: 10, w: 10, h: 10, color: RED }));
+    const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 });
+    const r = s.results[0];
+    expect(r.diffMaskPng).toBeInstanceOf(Buffer);
+    const mask = PNG.sync.read(r.diffMaskPng!);
+    const alphaAt = (x: number, y: number) => mask.data[(y * 100 + x) * 4 + 3];
+    expect(alphaAt(0, 0)).toBe(0); // unchanged pixel: fully transparent
+    expect(alphaAt(15, 15)).toBeGreaterThan(0); // changed pixel: visible
+  });
+
+  it('unchanged results carry no diff mask', () => {
+    const { base, curr } = tmpDirs();
+    write(base, 'a.png', makePng(20, 20, WHITE));
+    write(curr, 'a.png', makePng(20, 20, WHITE));
+    const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 });
+    expect(s.results[0].diffMaskPng).toBeUndefined();
   });
 
   it('diffRatio tolerance masks small changes', () => {

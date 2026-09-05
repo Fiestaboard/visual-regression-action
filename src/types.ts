@@ -9,6 +9,8 @@ export interface ScreenshotResult {
   baselinePng?: Buffer;
   currentPng?: Buffer;
   diffPng?: Buffer;
+  /** Transparent PNG containing only the changed pixels (overlay view). */
+  diffMaskPng?: Buffer;
 }
 
 export interface CompareSummary {

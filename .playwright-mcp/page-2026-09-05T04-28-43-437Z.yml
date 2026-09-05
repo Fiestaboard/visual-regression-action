@@ -1,0 +1,51 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - heading "🎨 Visual regression report" [level=1] [ref=f2e3]
+    - button "Review 3 changes" [ref=f2e4] [cursor=pointer]
+    - button "🔄 Changed · 1" [pressed] [ref=f2e5] [cursor=pointer]
+    - button "✨ Added · 1" [pressed] [ref=f2e6] [cursor=pointer]
+    - button "🗑️ Removed · 1" [pressed] [ref=f2e7] [cursor=pointer]
+    - button "✅ Unchanged · 1" [pressed] [ref=f2e8] [cursor=pointer]
+    - generic [ref=f2e9]:
+      - text: Fiestaboard/demo · commit abc1234 ·
+      - link "workflow run" [ref=f2e10] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/1
+      - text: · baseline from
+      - link "this run" [ref=f2e11] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/0
+  - main [ref=f2e12]:
+    - generic [ref=f2e13]:
+      - generic [ref=f2e14]:
+        - generic [ref=f2e15]: 🔄 Changed
+        - heading "home.png" [level=3] [ref=f2e16]
+        - generic [ref=f2e17]: 1.95%
+        - button "Expand ⤢" [ref=f2e18] [cursor=pointer]
+      - generic [ref=f2e19]:
+        - tablist [ref=f2e20]:
+          - tab "Swipe" [selected] [ref=f2e21] [cursor=pointer]
+          - tab "Overlay" [ref=f2e22] [cursor=pointer]
+          - tab "Side-by-side" [ref=f2e23] [cursor=pointer]
+        - generic [ref=f2e24]:
+          - generic [ref=f2e25]:
+            - img "current" [ref=f2e26]
+            - img "baseline" [ref=f2e27]
+            - generic [aria-hidden] [ref=f2e28]: ◂ ▸
+          - slider "swipe position" [ref=f2e29]: "50"
+          - paragraph [ref=f2e30]: "left of the line: baseline · right: current"
+    - generic [ref=f2e31]:
+      - generic [ref=f2e32]:
+        - generic [ref=f2e33]: ✨ Added
+        - heading "dashboard.png" [level=3] [ref=f2e34]
+        - button "Expand ⤢" [ref=f2e35] [cursor=pointer]
+      - figure "Current (new)" [ref=f2e37]:
+        - img "current (new)" [ref=f2e39]
+    - generic [ref=f2e40]:
+      - generic [ref=f2e41]:
+        - generic [ref=f2e42]: 🗑️ Removed
+        - heading "profile.png" [level=3] [ref=f2e43]
+        - button "Expand ⤢" [ref=f2e44] [cursor=pointer]
+      - figure "Baseline (removed)" [ref=f2e46]:
+        - img "baseline (removed)" [ref=f2e48]
+    - generic [ref=f2e50]:
+      - generic [ref=f2e51]: ✅ Unchanged
+      - heading "settings.png" [level=3] [ref=f2e52]
