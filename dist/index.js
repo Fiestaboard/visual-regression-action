@@ -85140,7 +85140,7 @@ function parseApprovalCommands(comments) {
                 if (/^[0-9a-f]{7,40}$/.test(pin))
                     allShas.push(pin);
             }
-            else if (/^[0-9a-f]{12}$/.test(pin)) {
+            else if (/^[0-9a-f]{7,40}$/.test(pin)) {
                 const list = entries.get(name) ?? [];
                 list.push(pin);
                 entries.set(name, list);
@@ -85159,13 +85159,18 @@ function applyApprovals(summary, approvals, headSha, headCommittedAt) {
     const headMatch = approvals.allShas.some((s) => headSha.toLowerCase().startsWith(s)) ||
         (!!headCommittedAt && approvals.allTimestamps.some((t) => t >= headCommittedAt));
     let approved = 0;
+    const head = headSha.toLowerCase();
     for (const r of summary.results) {
         if (r.status !== 'changed' && r.status !== 'removed')
             continue;
         const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
         if (!buf)
             continue;
-        if (headMatch || (approvals.entries.get(r.name) ?? []).includes(shortHash(buf))) {
+        const contentHash = shortHash(buf);
+        // A per-file pin is either a commit-sha prefix (robust against capture
+        // noise; any push invalidates it) or a legacy exact content hash.
+        const pinMatch = (approvals.entries.get(r.name) ?? []).some((pin) => head.startsWith(pin) || pin === contentHash);
+        if (headMatch || pinMatch) {
             r.approved = true;
             approved++;
         }
@@ -85863,14 +85868,13 @@ function resolveMode(modeInput, eventName, ref, defaultBranch) {
 /***/ }),
 
 /***/ 70665:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+/***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.generateMarkdownSummary = generateMarkdownSummary;
 exports.generateHtmlReport = generateHtmlReport;
-const approvals_1 = __nccwpck_require__(28175);
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const escPipe = (s) => s.replace(/\|/g, '\\|');
 const pct = (ratio) => `${(ratio * 100).toFixed(2)}%`;
@@ -85924,14 +85928,11 @@ function generateMarkdownSummary(summary, meta) {
     }
     const unapproved = summary.results.filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved);
     if (unapproved.length > 0 && !meta.missingBaseline) {
+        const pin = meta.sha.slice(0, 7);
         const entries = unapproved
             .filter((r) => !/\s/.test(r.name))
             .slice(0, 30)
-            .map((r) => {
-            const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
-            return buf ? `${r.name}@${(0, approvals_1.shortHash)(buf)}` : '';
-        })
-            .filter(Boolean);
+            .map((r) => `${r.name}@${pin}`);
         lines.push('<details>', '<summary>✅ <b>Accept these changes</b> — copy a command, post it as a comment</summary>', '', 'If the changes are intentional, post one of these as a PR comment. ' +
             'With the [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed, ' +
             'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.', '', 'Approve everything (valid until the next push):', '', '```', '/vrt approve all', '```', '', `Or pinned to exactly this commit: \`/vrt approve all@${meta.sha.slice(0, 7)}\``);
@@ -85954,10 +85955,9 @@ function generateMarkdownSummary(summary, meta) {
 // baseline/current/diff data URIs, the overlay carries the mask. Every other
 // <img> (swipe views, the fullscreen reviewer) is populated at load by
 // copying those srcs — see the inline script.
-function changedCard(r) {
-    const hash = r.currentPng ? (0, approvals_1.shortHash)(r.currentPng) : '';
+function changedCard(r, pin) {
     return `
-  <section class="card" data-status="changed"${hash ? ` data-hash="${hash}"` : ''}>
+  <section class="card" data-status="changed" data-pin="${pin}">
     <header>
       <span class="badge changed">${STATUS_LABEL.changed}</span>
       <h3>${esc(r.name)}</h3>
@@ -85997,14 +85997,14 @@ function changedCard(r) {
     </div>
   </section>`;
 }
-function simpleCard(r) {
+function simpleCard(r, extraPin) {
     const img = r.status === 'added'
         ? `<img class="shot-current" src="${dataUri(r.currentPng)}" alt="current (new)">`
         : `<img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline (removed)">`;
     const caption = r.status === 'added' ? 'Current (new)' : 'Baseline (removed)';
-    const hash = r.status === 'removed' && r.baselinePng ? (0, approvals_1.shortHash)(r.baselinePng) : '';
+    const pin = r.status === 'removed' ? ` data-pin="${extraPin}"` : '';
     return `
-  <section class="card" data-status="${r.status}"${hash ? ` data-hash="${hash}"` : ''}>
+  <section class="card" data-status="${r.status}"${pin}>
     <header>
       <span class="badge ${r.status}">${STATUS_LABEL[r.status]}</span>
       <h3>${esc(r.name)}</h3>
@@ -86023,12 +86023,12 @@ function unchangedCard(r) {
     </header>
   </section>`;
 }
-function card(r) {
+function card(r, pin) {
     if (r.status === 'changed')
-        return changedCard(r);
+        return changedCard(r, pin);
     if (r.status === 'unchanged')
         return unchangedCard(r);
-    return simpleCard(r);
+    return simpleCard(r, pin);
 }
 function generateHtmlReport(summary, meta) {
     const counts = [
@@ -86181,7 +86181,7 @@ function generateHtmlReport(summary, meta) {
   <div class="meta">${esc(meta.repo)} · commit ${esc(meta.sha.slice(0, 7))} · <a href="${esc(meta.runUrl)}">workflow run</a>${meta.baselineRunUrl ? ` · baseline from <a href="${esc(meta.baselineRunUrl)}">this run</a>` : ''}${meta.missingBaseline ? ' · ⚠️ no baseline found — everything is new' : ''}</div>
 </div>
 <main>
-${ordered.map(card).join('\n')}
+${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
 </main>
 <div class="lightbox" hidden>
   <div class="lb-bar">
@@ -86279,13 +86279,13 @@ ${ordered.map(card).join('\n')}
   var cmdbar = document.querySelector('.cmdbar');
   var cmdInput = cmdbar.querySelector('.cmd');
   function votableCards() {
-    return cards.filter(function (c) { return c.getAttribute('data-hash'); });
+    return cards.filter(function (c) { return c.getAttribute('data-pin'); });
   }
   function updateTally() {
     var total = votableCards().length;
     var yes = 0, no = 0;
     cards.forEach(function (c, i) {
-      if (!c.getAttribute('data-hash')) return;
+      if (!c.getAttribute('data-pin')) return;
       if (decisions[i] === true) yes++;
       if (decisions[i] === false) no++;
     });
@@ -86295,7 +86295,7 @@ ${ordered.map(card).join('\n')}
   function updateCmdbar() {
     var entries = [], total = 0, rejected = 0;
     cards.forEach(function (c, i) {
-      var h = c.getAttribute('data-hash');
+      var h = c.getAttribute('data-pin');
       if (!h) return;
       total++;
       if (decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
@@ -86320,7 +86320,7 @@ ${ordered.map(card).join('\n')}
     }
   }
   function vote(v) {
-    if (!cards[idx].getAttribute('data-hash')) return;
+    if (!cards[idx].getAttribute('data-pin')) return;
     decisions[idx] = decisions[idx] === v ? null : v;
     updateCmdbar();
     resetZoom();
@@ -86344,7 +86344,7 @@ ${ordered.map(card).join('\n')}
       t.setAttribute('aria-selected', String(changed && t.dataset.mode === mode));
     });
     lbScrub.style.display = changed && mode === 'swipe' ? '' : 'none';
-    var votable = !!c.getAttribute('data-hash');
+    var votable = !!c.getAttribute('data-pin');
     voteA.style.display = votable ? '' : 'none';
     voteR.style.display = votable ? '' : 'none';
     voteA.setAttribute('aria-pressed', String(decisions[idx] === true));

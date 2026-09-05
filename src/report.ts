@@ -1,5 +1,4 @@
 import { CompareSummary, ScreenshotResult, Status } from './types';
-import { shortHash } from './approvals';
 
 export interface ReportMeta {
   repo: string;
@@ -85,14 +84,11 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
     (r) => (r.status === 'changed' || r.status === 'removed') && !r.approved
   );
   if (unapproved.length > 0 && !meta.missingBaseline) {
+    const pin = meta.sha.slice(0, 7);
     const entries = unapproved
       .filter((r) => !/\s/.test(r.name))
       .slice(0, 30)
-      .map((r) => {
-        const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
-        return buf ? `${r.name}@${shortHash(buf)}` : '';
-      })
-      .filter(Boolean);
+      .map((r) => `${r.name}@${pin}`);
     lines.push(
       '<details>',
       '<summary>✅ <b>Accept these changes</b> — copy a command, post it as a comment</summary>',
@@ -130,10 +126,9 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
 // baseline/current/diff data URIs, the overlay carries the mask. Every other
 // <img> (swipe views, the fullscreen reviewer) is populated at load by
 // copying those srcs — see the inline script.
-function changedCard(r: ScreenshotResult): string {
-  const hash = r.currentPng ? shortHash(r.currentPng) : '';
+function changedCard(r: ScreenshotResult, pin: string): string {
   return `
-  <section class="card" data-status="changed"${hash ? ` data-hash="${hash}"` : ''}>
+  <section class="card" data-status="changed" data-pin="${pin}">
     <header>
       <span class="badge changed">${STATUS_LABEL.changed}</span>
       <h3>${esc(r.name)}</h3>
@@ -174,15 +169,15 @@ function changedCard(r: ScreenshotResult): string {
   </section>`;
 }
 
-function simpleCard(r: ScreenshotResult): string {
+function simpleCard(r: ScreenshotResult, extraPin: string): string {
   const img =
     r.status === 'added'
       ? `<img class="shot-current" src="${dataUri(r.currentPng)}" alt="current (new)">`
       : `<img class="shot-baseline" src="${dataUri(r.baselinePng)}" alt="baseline (removed)">`;
   const caption = r.status === 'added' ? 'Current (new)' : 'Baseline (removed)';
-  const hash = r.status === 'removed' && r.baselinePng ? shortHash(r.baselinePng) : '';
+  const pin = r.status === 'removed' ? ` data-pin="${extraPin}"` : '';
   return `
-  <section class="card" data-status="${r.status}"${hash ? ` data-hash="${hash}"` : ''}>
+  <section class="card" data-status="${r.status}"${pin}>
     <header>
       <span class="badge ${r.status}">${STATUS_LABEL[r.status]}</span>
       <h3>${esc(r.name)}</h3>
@@ -203,10 +198,10 @@ function unchangedCard(r: ScreenshotResult): string {
   </section>`;
 }
 
-function card(r: ScreenshotResult): string {
-  if (r.status === 'changed') return changedCard(r);
+function card(r: ScreenshotResult, pin: string): string {
+  if (r.status === 'changed') return changedCard(r, pin);
   if (r.status === 'unchanged') return unchangedCard(r);
-  return simpleCard(r);
+  return simpleCard(r, pin);
 }
 
 export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): string {
@@ -367,7 +362,7 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
   }${meta.missingBaseline ? ' · ⚠️ no baseline found — everything is new' : ''}</div>
 </div>
 <main>
-${ordered.map(card).join('\n')}
+${ordered.map((r) => card(r, meta.sha.slice(0, 7))).join('\n')}
 </main>
 <div class="lightbox" hidden>
   <div class="lb-bar">
@@ -465,13 +460,13 @@ ${ordered.map(card).join('\n')}
   var cmdbar = document.querySelector('.cmdbar');
   var cmdInput = cmdbar.querySelector('.cmd');
   function votableCards() {
-    return cards.filter(function (c) { return c.getAttribute('data-hash'); });
+    return cards.filter(function (c) { return c.getAttribute('data-pin'); });
   }
   function updateTally() {
     var total = votableCards().length;
     var yes = 0, no = 0;
     cards.forEach(function (c, i) {
-      if (!c.getAttribute('data-hash')) return;
+      if (!c.getAttribute('data-pin')) return;
       if (decisions[i] === true) yes++;
       if (decisions[i] === false) no++;
     });
@@ -481,7 +476,7 @@ ${ordered.map(card).join('\n')}
   function updateCmdbar() {
     var entries = [], total = 0, rejected = 0;
     cards.forEach(function (c, i) {
-      var h = c.getAttribute('data-hash');
+      var h = c.getAttribute('data-pin');
       if (!h) return;
       total++;
       if (decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
@@ -506,7 +501,7 @@ ${ordered.map(card).join('\n')}
     }
   }
   function vote(v) {
-    if (!cards[idx].getAttribute('data-hash')) return;
+    if (!cards[idx].getAttribute('data-pin')) return;
     decisions[idx] = decisions[idx] === v ? null : v;
     updateCmdbar();
     resetZoom();
@@ -530,7 +525,7 @@ ${ordered.map(card).join('\n')}
       t.setAttribute('aria-selected', String(changed && t.dataset.mode === mode));
     });
     lbScrub.style.display = changed && mode === 'swipe' ? '' : 'none';
-    var votable = !!c.getAttribute('data-hash');
+    var votable = !!c.getAttribute('data-pin');
     voteA.style.display = votable ? '' : 'none';
     voteR.style.display = votable ? '' : 'none';
     voteA.setAttribute('aria-pressed', String(decisions[idx] === true));

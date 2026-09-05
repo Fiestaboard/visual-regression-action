@@ -46,7 +46,7 @@ export function parseApprovalCommands(comments: CommentLike[]): ApprovalSet {
       const pin = token.slice(at + 1).toLowerCase();
       if (name === 'all') {
         if (/^[0-9a-f]{7,40}$/.test(pin)) allShas.push(pin);
-      } else if (/^[0-9a-f]{12}$/.test(pin)) {
+      } else if (/^[0-9a-f]{7,40}$/.test(pin)) {
         const list = entries.get(name) ?? [];
         list.push(pin);
         entries.set(name, list);
@@ -72,11 +72,18 @@ export function applyApprovals(
     approvals.allShas.some((s) => headSha.toLowerCase().startsWith(s)) ||
     (!!headCommittedAt && approvals.allTimestamps.some((t) => t >= headCommittedAt));
   let approved = 0;
+  const head = headSha.toLowerCase();
   for (const r of summary.results) {
     if (r.status !== 'changed' && r.status !== 'removed') continue;
     const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
     if (!buf) continue;
-    if (headMatch || (approvals.entries.get(r.name) ?? []).includes(shortHash(buf))) {
+    const contentHash = shortHash(buf);
+    // A per-file pin is either a commit-sha prefix (robust against capture
+    // noise; any push invalidates it) or a legacy exact content hash.
+    const pinMatch = (approvals.entries.get(r.name) ?? []).some(
+      (pin) => head.startsWith(pin) || pin === contentHash
+    );
+    if (headMatch || pinMatch) {
       r.approved = true;
       approved++;
     }

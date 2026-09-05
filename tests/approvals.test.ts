@@ -99,6 +99,20 @@ describe('applyApprovals', () => {
     expect(s.results[1].approved).toBe(true);
   });
 
+  it('commit-pinned per-file entries approve regardless of capture bytes', () => {
+    const s = summary();
+    const a = parseApprovalCommands([comment('/vrt approve home.png@deadbee old.png@deadbeefcafe')]);
+    expect(applyApprovals(s, a, 'deadbeefcafe00')).toBe(2);
+    expect(s.results[0].approved).toBe(true);
+    expect(s.results[1].approved).toBe(true);
+  });
+
+  it('commit-pinned entries are stale once the head moves', () => {
+    const s = summary();
+    const a = parseApprovalCommands([comment('/vrt approve home.png@deadbee')]);
+    expect(applyApprovals(s, a, '0123456abcdef0')).toBe(0);
+  });
+
   it('stale hashes do not approve', () => {
     const s = summary();
     const a = parseApprovalCommands([comment('/vrt approve home.png@000000000000')]);

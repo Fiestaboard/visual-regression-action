@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { generateHtmlReport, generateMarkdownSummary, ReportMeta } from '../src/report';
-import { shortHash } from '../src/approvals';
 import { CompareSummary } from '../src/types';
 
 const meta: ReportMeta = {
@@ -74,9 +73,10 @@ describe('generateMarkdownSummary', () => {
 
   it('embeds ready-to-copy approve commands when unapproved changes exist', () => {
     const md = generateMarkdownSummary(summary(), meta);
-    expect(md).toContain('/vrt approve all@abc1234');
-    expect(md).toContain(`home.png@${shortHash(png)}`);
-    expect(md).toContain(`old.png@${shortHash(png)}`);
+    expect(md).toContain('/vrt approve all');
+    expect(md).toContain('all@abc1234');
+    expect(md).toContain('home.png@abc1234');
+    expect(md).toContain('old.png@abc1234');
     expect(md).toContain('Accept these changes');
   });
 
@@ -196,9 +196,9 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('dragstart');
   });
 
-  it('stamps approvable cards with content hashes and ships the approval command bar', () => {
+  it('stamps approvable cards with commit pins and ships the approval command bar', () => {
     const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7' });
-    expect(html).toContain(`data-hash="${shortHash(png)}"`); // changed + removed cards
+    expect(html).toContain('data-pin="abc1234"'); // changed + removed cards pin the head commit
     expect(html).toContain('class="cmdbar"');
     expect(html).toContain('/vrt approve');
     expect(html).toContain('Approve <kbd>A</kbd>');
