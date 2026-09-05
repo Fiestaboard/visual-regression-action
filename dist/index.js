@@ -85427,8 +85427,16 @@ async function run() {
     const screenshotsDir = core.getInput('screenshots-dir', { required: true });
     const token = core.getInput('github-token', { required: true });
     const key = core.getInput('key');
-    const threshold = parseFloat(core.getInput('threshold') || '0.1');
-    const diffRatio = parseFloat(core.getInput('diff-ratio') || '0');
+    const thresholdRaw = core.getInput('threshold') || '0.1';
+    const threshold = parseFloat(thresholdRaw);
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        throw new Error(`Invalid threshold "${thresholdRaw}" — must be a number between 0 and 1.`);
+    }
+    const diffRatioRaw = core.getInput('diff-ratio') || '0';
+    const diffRatio = parseFloat(diffRatioRaw);
+    if (!Number.isFinite(diffRatio) || diffRatio < 0 || diffRatio > 1) {
+        throw new Error(`Invalid diff-ratio "${diffRatioRaw}" — must be a number between 0 and 1.`);
+    }
     const failOnDiff = core.getBooleanInput('fail-on-diff');
     const comment = core.getBooleanInput('comment');
     const retentionInput = core.getInput('retention-days');
@@ -85475,9 +85483,19 @@ async function run() {
     const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
     const reportPath = path.join(reportDir, 'index.html');
     fs.writeFileSync(reportPath, (0, report_1.generateHtmlReport)(summary, meta));
-    await (0, baseline_1.uploadFileAsArtifact)((0, baseline_1.reportArtifactName)(key), reportPath, retentionDays);
+    try {
+        await (0, baseline_1.uploadFileAsArtifact)((0, baseline_1.reportArtifactName)(key), reportPath, retentionDays);
+    }
+    catch (err) {
+        core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
+    }
     const md = (0, report_1.generateMarkdownSummary)(summary, meta);
-    await core.summary.addRaw(md).write();
+    try {
+        await core.summary.addRaw(md).write();
+    }
+    catch (err) {
+        core.warning(`Could not write step summary: ${err instanceof Error ? err.message : String(err)}`);
+    }
     const prNumber = ctx.payload.pull_request?.number;
     if (comment && prNumber) {
         await (0, comment_1.upsertStickyComment)(octokit, owner, repo, prNumber, md);
