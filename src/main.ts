@@ -163,10 +163,15 @@ async function run(): Promise<void> {
 
   const unapproved = summary.changed + summary.removed - approved;
   if (failOnDiff && unapproved > 0) {
+    const missing = summary.results
+      .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
+      .map((r) => r.name);
+    const missingNote = ` Still needing approval: ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? ` …and ${missing.length - 10} more` : ''}.`;
     core.setFailed(
-      `Visual changes detected: ${summary.changed} changed, ${summary.removed} removed (${approved} approved). ` +
-        `Download the "${reportArtifactName(key)}" artifact to review. To accept intentional changes, use the ` +
-        `report's reviewer to generate a "/vrt approve" command and post it as a PR comment. Merging updates the baselines.`
+      `Visual changes detected: ${summary.changed} changed, ${summary.removed} removed (${approved} approved).` +
+        missingNote +
+        ` Download the "${reportArtifactName(key)}" artifact to review. To accept intentional changes, post a ` +
+        `"/vrt approve" command (see the PR comment) covering every changed and removed screenshot. Merging updates the baselines.`
     );
   } else if (failOnDiff && summary.hasChanges) {
     core.info('All visual changes are approved — passing.');

@@ -46,13 +46,25 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
     lines.push(`✅ **No visual changes** across ${summary.unchanged} screenshot(s).`, '');
   } else {
     const approvedCount = summary.results.filter((r) => r.approved).length;
+    const needingApproval = summary.changed + summary.removed;
     const approvedNote = approvedCount > 0 ? ` · ${approvedCount} approved` : '';
     lines.push(
       `**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged${approvedNote}**`,
       ''
     );
-    if (approvedCount > 0 && approvedCount === summary.changed + summary.removed) {
+    if (approvedCount > 0 && approvedCount === needingApproval) {
       lines.push('✅ **All visual changes approved** via `/vrt approve`.', '');
+    } else if (approvedCount > 0) {
+      const missing = summary.results
+        .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
+        .map((r) => `\`${r.name}\``);
+      const shown = missing.slice(0, 10).join(', ');
+      const more = missing.length > 10 ? ` …and ${missing.length - 10} more` : '';
+      lines.push(
+        `⚠️ **${approvedCount} of ${needingApproval} visual changes approved** — still needing review: ${shown}${more}. ` +
+          'The check stays red until every changed and removed screenshot is approved.',
+        ''
+      );
     }
   }
 
@@ -215,11 +227,11 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
 <style>
   :root { color-scheme: light dark;
     --bg:#fafafa; --fg:#1a1a1a; --card:#fff; --line:#e2e2e2; --muted:#6b6b6b;
-    --hot:#ec4899;
+    --hot:#ec4899; --warn:#b45309;
     --changed:#be185d; --changed-bg:#fce7f3; --added:#1d4ed8; --added-bg:#dbeafe;
     --removed:#b91c1c; --removed-bg:#fee2e2; --unchanged:#15803d; --unchanged-bg:#dcfce7; }
   @media (prefers-color-scheme: dark) { :root {
-    --bg:#111214; --fg:#e8e8e8; --card:#1b1d21; --line:#2e3138; --muted:#9a9a9a;
+    --bg:#111214; --fg:#e8e8e8; --card:#1b1d21; --line:#2e3138; --muted:#9a9a9a; --warn:#fbbf24;
     --changed-bg:#4a1030; --changed:#f9a8d4; --added-bg:#172a54; --added:#93c5fd;
     --removed-bg:#450f0f; --removed:#fca5a5; --unchanged-bg:#0f3520; --unchanged:#86efac; } }
   * { box-sizing:border-box }
@@ -306,7 +318,9 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
     align-items:center; flex-wrap:wrap; padding:12px 20px; background:var(--card);
     border-top:2px solid var(--hot); box-shadow:0 -4px 16px rgba(0,0,0,.15) }
   .cmdbar[hidden] { display:none }
-  .cmdbar .hint { font-size:13px; color:var(--muted) }
+  .cmdbar.partial { border-top-color:var(--warn) }
+  .cmdbar .coverage { font-size:13px; color:var(--muted); flex:1 1 100% }
+  .cmdbar.partial .coverage { color:var(--warn); font-weight:600 }
   .cmdbar input { flex:1 1 320px; min-width:0; font:13px ui-monospace,Menlo,monospace;
     padding:8px 10px; border:1px solid var(--line); border-radius:8px;
     background:var(--bg); color:var(--fg) }
@@ -379,7 +393,7 @@ ${ordered.map(card).join('\n')}
   </div>
 </div>
 <div class="cmdbar" hidden>
-  <span class="hint">Post this as a PR comment to accept the approved changes:</span>
+  <span class="coverage"></span>
   <input class="cmd" readonly aria-label="approval command">
   <button class="copy" type="button">Copy</button>
   ${meta.prUrl ? `<a class="pr" href="${esc(meta.prUrl)}">Open PR ↗</a>` : ''}
@@ -463,13 +477,31 @@ ${ordered.map(card).join('\n')}
       total ? yes + ' approved · ' + no + ' rejected · ' + (total - yes - no) + ' left' : '';
   }
   function updateCmdbar() {
-    var entries = [];
+    var entries = [], total = 0, rejected = 0;
     cards.forEach(function (c, i) {
       var h = c.getAttribute('data-hash');
-      if (h && decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
+      if (!h) return;
+      total++;
+      if (decisions[i] === true) entries.push(c.querySelector('h3').textContent + '@' + h);
+      if (decisions[i] === false) rejected++;
     });
     cmdbar.hidden = entries.length === 0;
-    if (entries.length) cmdInput.value = '/vrt approve ' + entries.join(' ');
+    if (!entries.length) return;
+    cmdInput.value = '/vrt approve ' + entries.join(' ');
+    var unreviewed = total - entries.length - rejected;
+    var cov = cmdbar.querySelector('.coverage');
+    if (unreviewed > 0) {
+      cov.textContent = '⚠️ Covers ' + entries.length + ' of ' + total + ' — ' + unreviewed +
+        ' still unreviewed. The check stays red until every changed/removed screenshot is approved.';
+      cmdbar.classList.add('partial');
+    } else if (rejected > 0) {
+      cov.textContent = 'Covers ' + entries.length + ' of ' + total + ' — ' + rejected +
+        ' rejected (check stays red until those are fixed). Post as a PR comment:';
+      cmdbar.classList.remove('partial');
+    } else {
+      cov.textContent = 'Covers all ' + total + ' changes — post as a PR comment and the check will pass:';
+      cmdbar.classList.remove('partial');
+    }
   }
   function vote(v) {
     if (!cards[idx].getAttribute('data-hash')) return;

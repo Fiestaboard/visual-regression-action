@@ -61,6 +61,17 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('[Download the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1)');
   });
 
+  it('calls out partial approval with the names still needing review', () => {
+    const s = summary();
+    s.results[3].approved = true; // home.png approved; old.png (removed) is not
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain('⚠️');
+    expect(md).toMatch(/1 of 2 .*approved/i);
+    expect(md).toContain('still needing review');
+    expect(md).toContain('`old.png`');
+    expect(md).not.toContain('still needing review: `home.png`');
+  });
+
   it('embeds ready-to-copy approve commands when unapproved changes exist', () => {
     const md = generateMarkdownSummary(summary(), meta);
     expect(md).toContain('/vrt approve all@abc1234');
@@ -166,6 +177,13 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('class="lightbox"');
     expect(html).toContain('ArrowRight');
     expect(html).toContain('Review 3 changes');
+  });
+
+  it('command bar tracks coverage so partial approvals are visible before posting', () => {
+    const html = generateHtmlReport(summary(), meta);
+    expect(html).toContain('class="coverage"');
+    expect(html).toContain('updateCmdbar');
+    expect(html).toContain('still unreviewed');
   });
 
   it('reviewer has visible prev/next buttons, kbd hints, and selection disabled on drag surfaces', () => {
