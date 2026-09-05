@@ -1,8 +1,7 @@
 name: 'Visual Regression Action'
 description: >-
-  Visual regression testing with artifact-based baselines: diff PR screenshots
-  against the default branch's build artifacts and get an HTML report + sticky
-  PR comment. No screenshots committed to git.
+  Visual regression testing with artifact-based baselines — screenshot diffs,
+  HTML reports, and comment-driven approvals.
 author: 'Fiestaboard'
 branding:
   icon: 'eye'

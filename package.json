@@ -1,6 +1,6 @@
 {
   "name": "visual-regression-action",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Visual regression testing for GitHub Actions with artifact-based baselines — no screenshots in git",
   "main": "dist/index.js",
