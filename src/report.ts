@@ -69,6 +69,38 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
     lines.push('');
   }
 
+  const unapproved = summary.results.filter(
+    (r) => (r.status === 'changed' || r.status === 'removed') && !r.approved
+  );
+  if (unapproved.length > 0 && !meta.missingBaseline) {
+    const entries = unapproved
+      .filter((r) => !/\s/.test(r.name))
+      .slice(0, 30)
+      .map((r) => {
+        const buf = r.status === 'changed' ? r.currentPng : r.baselinePng;
+        return buf ? `${r.name}@${shortHash(buf)}` : '';
+      })
+      .filter(Boolean);
+    lines.push(
+      '<details>',
+      '<summary>✅ <b>Accept these changes</b> — copy a command, post it as a comment</summary>',
+      '',
+      'If the changes are intentional, post one of these as a PR comment. ' +
+        'With the [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed, ' +
+        'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.',
+      '',
+      'Approve everything at this commit:',
+      '',
+      '```',
+      `/vrt approve all@${meta.sha.slice(0, 7)}`,
+      '```'
+    );
+    if (entries.length > 0) {
+      lines.push('', 'Or approve screenshots individually (edit to taste):', '', '```', `/vrt approve ${entries.join(' ')}`, '```');
+    }
+    lines.push('', '</details>', '');
+  }
+
   if (meta.reportDownloadUrl) {
     lines.push(
       `📦 [Download the full visual report](${meta.reportDownloadUrl}) (artifact \`${meta.reportArtifactName}\`) · [workflow run](${meta.runUrl})`

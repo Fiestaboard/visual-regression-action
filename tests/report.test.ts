@@ -61,6 +61,27 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('[Download the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1)');
   });
 
+  it('embeds ready-to-copy approve commands when unapproved changes exist', () => {
+    const md = generateMarkdownSummary(summary(), meta);
+    expect(md).toContain('/vrt approve all@abc1234');
+    expect(md).toContain(`home.png@${shortHash(png)}`);
+    expect(md).toContain(`old.png@${shortHash(png)}`);
+    expect(md).toContain('Accept these changes');
+  });
+
+  it('omits the approve-command block when everything is approved', () => {
+    const s = summary();
+    for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).not.toContain('Accept these changes');
+    expect(md).not.toContain('/vrt approve all@');
+  });
+
+  it('omits the approve-command block when the baseline is missing', () => {
+    const md = generateMarkdownSummary(summary(), { ...meta, missingBaseline: true });
+    expect(md).not.toContain('Accept these changes');
+  });
+
   it('interpolates the key-aware report artifact name', () => {
     const md = generateMarkdownSummary(summary(), { ...meta, reportArtifactName: 'vrt-report-web' });
     expect(md).toContain('vrt-report-web');
