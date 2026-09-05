@@ -77,20 +77,22 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('all@abc1234');
     expect(md).toContain('home.png@abc1234');
     expect(md).toContain('old.png@abc1234');
-    expect(md).toContain('Accept these changes');
+    expect(md).toContain('Next steps');
+    expect(md).toContain('open `index.html`');
+    expect(md).toContain('download the visual report');
   });
 
   it('omits the approve-command block when everything is approved', () => {
     const s = summary();
     for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
     const md = generateMarkdownSummary(s, meta);
-    expect(md).not.toContain('Accept these changes');
+    expect(md).not.toContain('Next steps');
     expect(md).not.toContain('/vrt approve all@');
   });
 
   it('omits the approve-command block when the baseline is missing', () => {
     const md = generateMarkdownSummary(summary(), { ...meta, missingBaseline: true });
-    expect(md).not.toContain('Accept these changes');
+    expect(md).not.toContain('Next steps');
   });
 
   it('interpolates the key-aware report artifact name', () => {
@@ -130,7 +132,8 @@ describe('approvalOutcomeBody', () => {
     const s = summary();
     for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
     const body = approvalOutcomeBody(s, meta);
-    expect(body).toContain('✅ Approvals applied');
+    expect(body).toContain('### Approvals applied');
+    expect(body).toContain('✅');
     expect(body).toContain('passed');
   });
 
@@ -138,19 +141,21 @@ describe('approvalOutcomeBody', () => {
     const s = summary();
     s.results[3].approved = true; // home.png only
     const body = approvalOutcomeBody(s, meta);
-    expect(body).toContain('⚠️ Approvals partially applied');
+    expect(body).toContain('### Approvals partially applied');
+    expect(body).toContain('⚠️');
     expect(body).toContain('`old.png`');
   });
 
   it('explains when nothing matched', () => {
     const body = approvalOutcomeBody(summary(), meta);
-    expect(body).toContain('❌ No approvals matched');
+    expect(body).toContain('### No approvals matched');
+    expect(body).toContain('❌');
     expect(body).toContain('stale');
   });
 
   it('reports a clean pass when nothing needed approval', () => {
     const s: CompareSummary = { results: [], changed: 0, added: 0, removed: 0, unchanged: 3, hasChanges: false };
-    expect(approvalOutcomeBody(s, meta)).toContain('✅ Check passed');
+    expect(approvalOutcomeBody(s, meta)).toContain('### Check passed');
   });
 });
 

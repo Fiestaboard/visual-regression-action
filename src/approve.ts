@@ -57,10 +57,10 @@ export async function rerunFailedJobs(octokit: ApproveOctokit, owner: string, re
 export function approvalReceivedBody(user: string, commandBody: string, runUrls: string[]): string {
   const tokens = commandBody.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
   const what = tokens.length ? tokens.map((t) => `\`${t}\``).join(' ') : '(nothing parseable)';
-  const lines = [`### 🔁 Approval received`, '', `@${user} requested approval for: ${what}`, ''];
+  const lines = [`### Approval received`, '', `👀 @${user} requested approval for: ${what}`, ''];
   if (runUrls.length > 0) {
     lines.push(
-      `Rerunning the visual check now: ${runUrls.map((u, i) => `[run ${i + 1}](${u})`).join(' · ')}.`,
+      `🔁 Rerunning the visual check now: ${runUrls.map((u, i) => `[run ${i + 1}](${u})`).join(' · ')}.`,
       '',
       '_This comment updates with the result when the check completes._'
     );

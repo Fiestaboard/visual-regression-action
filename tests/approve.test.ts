@@ -6,7 +6,8 @@ describe('approvalReceivedBody', () => {
     const body = approvalReceivedBody('jeffredodd', '/vrt approve home.png@abc1234 all', [
       'https://github.com/o/r/actions/runs/1',
     ]);
-    expect(body).toContain('🔁 Approval received');
+    expect(body).toContain('### Approval received');
+    expect(body).toContain('👀');
     expect(body).toContain('@jeffredodd');
     expect(body).toContain('`home.png@abc1234`');
     expect(body).toContain('`all`');

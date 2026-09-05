@@ -33,7 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_ORDER: Status[] = ['changed', 'added', 'removed', 'unchanged'];
 
 export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMeta): string {
-  const lines: string[] = ['### 🎨 Visual regression report', ''];
+  const lines: string[] = ['### Visual regression report', ''];
 
   if (meta.missingBaseline) {
     lines.push(
@@ -89,21 +89,26 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
       .filter((r) => !/\s/.test(r.name))
       .slice(0, 30)
       .map((r) => `${r.name}@${pin}`);
+    const dl = meta.reportDownloadUrl ?? meta.runUrl;
     lines.push(
-      '<details>',
-      '<summary>✅ <b>Accept these changes</b> — copy a command, post it as a comment</summary>',
+      '#### Next steps',
       '',
-      'If the changes are intentional, post one of these as a PR comment. ' +
-        'With the [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed, ' +
-        'the check reruns and passes automatically; otherwise use "Re-run failed jobs" after posting.',
-      '',
-      'Approve everything (valid until the next push):',
+      `1. **Review the changes:** [download the visual report](${dl}), unzip it, and open \`index.html\` — ` +
+        'step through each screenshot with the swipe/overlay views, approve or reject each one, and the reviewer ' +
+        'assembles the exact `/vrt approve` command for you to post here.',
+      '2. **Or, if these changes are all intentional,** skip the download and post this comment as-is:',
       '',
       '```',
       '/vrt approve all',
       '```',
       '',
-      `Or pinned to exactly this commit: \`/vrt approve all@${meta.sha.slice(0, 7)}\``
+      'Either way, the check reruns automatically and this thread gets the result. ' +
+        '(No [approvals workflow](https://github.com/Fiestaboard/visual-regression-action#approving-changes) installed? Use "Re-run failed jobs" after posting.)',
+      '',
+      '<details>',
+      '<summary>More precise approval commands</summary>',
+      '',
+      `Everything pinned to exactly this commit (survives later pushes only if the head stays put): \`/vrt approve all@${pin}\``
     );
     if (entries.length > 0) {
       lines.push('', 'Or approve screenshots individually (edit to taste):', '', '```', `/vrt approve ${entries.join(' ')}`, '```');
@@ -131,10 +136,10 @@ export function approvalOutcomeBody(summary: CompareSummary, meta: ReportMeta): 
   const approved = summary.results.filter((r) => r.approved).length;
   const run = `[visual check](${meta.runUrl})`;
   if (needing === 0) {
-    return `### ✅ Check passed\n\nNo visual changes needed approval on the latest run — the ${run} passed.`;
+    return `### Check passed\n\n✅ No visual changes needed approval on the latest run — the ${run} passed.`;
   }
   if (approved === needing) {
-    return `### ✅ Approvals applied\n\nAll ${needing} visual change(s) approved — the ${run} passed. Merging publishes the new baselines.`;
+    return `### Approvals applied\n\n✅ All ${needing} visual change(s) approved — the ${run} passed. Merging publishes the new baselines.`;
   }
   if (approved > 0) {
     const missing = summary.results
@@ -143,12 +148,12 @@ export function approvalOutcomeBody(summary: CompareSummary, meta: ReportMeta): 
       .slice(0, 10)
       .join(', ');
     return (
-      `### ⚠️ Approvals partially applied\n\n${approved} of ${needing} visual change(s) approved; still needing review: ${missing}. ` +
+      `### Approvals partially applied\n\n⚠️ ${approved} of ${needing} visual change(s) approved; still needing review: ${missing}. ` +
       `The ${run} stays red — copy a fresh command from the report comment above.`
     );
   }
   return (
-    `### ❌ No approvals matched\n\nThe ${run} re-ran, but no posted approval matched — pins go stale when new commits are pushed. ` +
+    `### No approvals matched\n\n❌ The ${run} re-ran, but no posted approval matched — pins go stale when new commits are pushed. ` +
     'Copy a fresh command from the report comment above.'
   );
 }
@@ -382,7 +387,7 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
 </head>
 <body>
 <div class="top">
-  <h1>🎨 Visual regression report</h1>
+  <h1>Visual regression report</h1>
   ${reviewable > 0 ? `<button class="review" data-open-first type="button">Review ${reviewable} change${reviewable === 1 ? '' : 's'}</button>` : ''}
   ${counts
     .map(
