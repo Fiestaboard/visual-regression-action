@@ -1,0 +1,37 @@
+# Living demo of the action's PR surface. Pushes to main publish the demo
+# baseline; PRs that touch the demo files get a real compare run with the
+# sticky comment and (intentionally) a red check on visual changes.
+name: Visual demo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - scripts/make-demo-screenshots.mjs
+      - .github/workflows/demo.yml
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Render demo screens
+        run: node scripts/make-demo-screenshots.mjs
+      - name: Visual regression
+        uses: ./
+        with:
+          screenshots-dir: demo-screens
+          key: demo
