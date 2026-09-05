@@ -146,6 +146,16 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('Review 3 changes');
   });
 
+  it('reviewer has visible prev/next buttons, kbd hints, and selection disabled on drag surfaces', () => {
+    const html = generateHtmlReport(summary(), meta);
+    expect(html).toContain('class="lb-nav prev"');
+    expect(html).toContain('class="lb-nav next"');
+    expect(html).toContain('Swipe <kbd>S</kbd>');
+    expect(html).toContain('Close <kbd>Esc</kbd>');
+    expect(html).toContain('user-select:none');
+    expect(html).toContain('dragstart');
+  });
+
   it('omits the review button when nothing is reviewable', () => {
     const s: CompareSummary = {
       results: [{ name: 'a.png', status: 'unchanged', diffRatio: 0 }],

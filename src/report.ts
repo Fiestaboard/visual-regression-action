@@ -217,6 +217,9 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
   .stage[data-mode="sbs"] .view-sbs { display:block }
   .frame { position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden;
     background:#fff; line-height:0 }
+  /* Comparison surfaces are drag targets — text/image selection there is noise. */
+  .stage, .lightbox { user-select:none; -webkit-user-select:none }
+  .frame img, .lb-canvas img, .thumbs img { -webkit-user-drag:none }
   .frame img { width:100%; display:block }
   .sw-over { position:absolute; inset:0; clip-path:inset(0 calc(100% - var(--split)) 0 0) }
   .handle { position:absolute; top:0; bottom:0; left:var(--split); width:2px; margin-left:-1px;
@@ -247,6 +250,15 @@ export function generateHtmlReport(summary: CompareSummary, meta: ReportMeta): s
   .lightbox .tab[aria-selected="true"] { background:#e8e8e8; color:#111; border-color:#e8e8e8 }
   button.lb-close { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
     border-radius:8px; padding:4px 12px; font-size:13px }
+  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:11;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    border:1px solid #3a3d44; background:rgba(27,29,33,.9); color:#e8e8e8;
+    border-radius:12px; padding:14px 12px; font-size:22px; line-height:1 }
+  .lb-nav kbd { font-size:10px }
+  .lb-nav.prev { left:16px }
+  .lb-nav.next { right:16px }
+  .lb-nav:hover { background:#2a2d33 }
+  .lb-stage-wrap { flex:1; position:relative; display:flex; min-height:0 }
   .lb-zoom { flex:1; overflow:hidden; position:relative; cursor:grab }
   .lb-zoom.panning { cursor:grabbing }
   .lb-canvas { position:absolute; top:50%; left:50%; transform-origin:0 0; line-height:0 }
@@ -285,19 +297,20 @@ ${ordered.map(card).join('\n')}
     <span class="lb-name"></span>
     <span class="lb-stat"></span>
     <div class="tabs" role="tablist">
-      <button class="tab" role="tab" data-mode="swipe" type="button">Swipe</button>
-      <button class="tab" role="tab" data-mode="overlay" type="button">Overlay</button>
-      <button class="tab" role="tab" data-mode="sbs" type="button">Side-by-side</button>
+      <button class="tab" role="tab" data-mode="swipe" type="button">Swipe <kbd>S</kbd></button>
+      <button class="tab" role="tab" data-mode="overlay" type="button">Overlay <kbd>O</kbd></button>
+      <button class="tab" role="tab" data-mode="sbs" type="button">Side-by-side <kbd>D</kbd></button>
     </div>
-    <button class="lb-close" type="button">Close ✕</button>
+    <button class="lb-close" type="button">Close <kbd>Esc</kbd></button>
   </div>
-  <div class="lb-zoom"><div class="lb-canvas"></div></div>
+  <div class="lb-stage-wrap">
+    <button class="lb-nav prev" type="button" aria-label="previous screenshot">‹<kbd>←</kbd></button>
+    <div class="lb-zoom"><div class="lb-canvas"></div></div>
+    <button class="lb-nav next" type="button" aria-label="next screenshot">›<kbd>→</kbd></button>
+  </div>
   <div class="lb-foot">
     <input class="scrub" type="range" min="0" max="100" value="50" aria-label="swipe position">
-    <span><kbd>←</kbd> <kbd>→</kbd> screenshot</span>
-    <span><kbd>S</kbd> <kbd>O</kbd> <kbd>D</kbd> view</span>
     <span>scroll to zoom · drag to pan · double-click resets</span>
-    <span><kbd>Esc</kbd> close</span>
   </div>
 </div>
 <script>
@@ -408,6 +421,11 @@ ${ordered.map(card).join('\n')}
     if (btn) btn.addEventListener('click', function () { open(i); });
   });
   lb.querySelector('.lb-close').addEventListener('click', close);
+  lb.querySelector('.lb-nav.prev').addEventListener('click', function () { resetZoom(); show(idx - 1); });
+  lb.querySelector('.lb-nav.next').addEventListener('click', function () { resetZoom(); show(idx + 1); });
+  document.addEventListener('dragstart', function (e) {
+    if (e.target && e.target.tagName === 'IMG') e.preventDefault();
+  });
   lb.querySelectorAll('.lb-bar .tab').forEach(function (tab) {
     tab.addEventListener('click', function () { mode = tab.dataset.mode; show(idx); });
   });
