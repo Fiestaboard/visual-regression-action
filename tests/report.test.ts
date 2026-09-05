@@ -78,8 +78,9 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('home.png@abc1234');
     expect(md).toContain('old.png@abc1234');
     expect(md).toContain('Next steps');
+    expect(md).toContain('- [ ] <!-- vrt:approve-all@abc1234 -->');
     expect(md).toContain('open `index.html`');
-    expect(md).toContain('download the visual report');
+    expect(md).toContain('Download the visual report');
   });
 
   it('omits the approve-command block when everything is approved', () => {
@@ -211,7 +212,11 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('data-mode="sbs"');
     expect(html).toContain('class="lightbox"');
     expect(html).toContain('ArrowRight');
-    expect(html).toContain('Review 3 changes');
+    expect(html).toContain('Start review');
+    expect(html).toContain('data-mode="blink"');
+    expect(html).toContain('lb-dots');
+    expect(html).toContain('localStorage');
+    expect(html).toContain('new_comment_field');
   });
 
   it('command bar guides the reviewer through all states', () => {

@@ -59,6 +59,23 @@ describe('parseApprovalCommands', () => {
     expect(a.allShas).toEqual([]);
   });
 
+  it('collects checked approve-all checkboxes only from the bot-authored report comment', () => {
+    const bot = { login: 'github-actions[bot]' };
+    const human = { login: 'attacker' };
+    const a = parseApprovalCommands([
+      { body: 'report…\n- [x] <!-- vrt:approve-all@abc1234 --> **Approve all**', author_association: 'NONE', user: bot },
+      { body: '- [x] <!-- vrt:approve-all@deadbee --> fake', author_association: 'NONE', user: human },
+    ]);
+    expect(a.allShas).toEqual(['abc1234']);
+  });
+
+  it('ignores unchecked checkboxes', () => {
+    const a = parseApprovalCommands([
+      { body: '- [ ] <!-- vrt:approve-all@abc1234 --> **Approve all**', author_association: 'NONE', user: { login: 'github-actions[bot]' } },
+    ]);
+    expect(a.allShas).toEqual([]);
+  });
+
   it('collects timestamps of bare "all" commands from authorized commenters', () => {
     const a = parseApprovalCommands([
       comment('/vrt approve all', OK, '2026-09-05T12:00:00Z'),

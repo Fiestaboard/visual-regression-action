@@ -15,7 +15,7 @@ interface MinimalOctokit {
         issue_number: number;
         per_page: number;
         page: number;
-      }) => Promise<{ data: Array<{ id: number; body?: string; author_association?: string; created_at?: string }> }>;
+      }) => Promise<{ data: Array<{ id: number; body?: string; author_association?: string; created_at?: string; user?: { login?: string } | null }> }>;
       createComment: (p: { owner: string; repo: string; issue_number: number; body: string }) => Promise<unknown>;
       updateComment: (p: { owner: string; repo: string; comment_id: number; body: string }) => Promise<unknown>;
     };
@@ -46,8 +46,8 @@ export async function listPrComments(
   owner: string,
   repo: string,
   prNumber: number
-): Promise<Array<{ id: number; body?: string; author_association?: string; created_at?: string }>> {
-  const out: Array<{ id: number; body?: string; author_association?: string; created_at?: string }> = [];
+): Promise<Array<{ id: number; body?: string; author_association?: string; created_at?: string; user?: { login?: string } | null }>> {
+  const out: Array<{ id: number; body?: string; author_association?: string; created_at?: string; user?: { login?: string } | null }> = [];
   for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
     const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
     out.push(...data);

@@ -7,7 +7,7 @@ import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
 import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
 import { upsertStickyComment, upsertMarkedComment, listPrComments, STATUS_MARKER } from './comment';
-import { parseApprovalCommands, applyApprovals, isApproveComment } from './approvals';
+import { parseApprovalCommands, applyApprovals, isApproveComment, checkboxPin } from './approvals';
 import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody } from './approve';
 import {
   baselineArtifactName,
@@ -203,20 +203,49 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
     core.info('Comment is not on a pull request — nothing to do.');
     return;
   }
-  if (!isApproveComment(commentBody)) {
-    core.info('Comment is not a /vrt approve command — nothing to do.');
-    return;
-  }
-  if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association)) {
-    core.notice(`Ignoring /vrt approve from author_association "${association}" — approvals require write access.`);
-    return;
-  }
   if (!prNumber) {
     core.info('No PR number in the event payload — nothing to do.');
     return;
   }
 
   const octokit = github.getOctokit(token);
+  const isBoxTick =
+    ctx.payload.action === 'edited' &&
+    ctx.payload.comment?.user?.login === 'github-actions[bot]' &&
+    checkboxPin(commentBody) !== null;
+  const senderLogin: string = ctx.payload.sender?.login ?? '';
+
+  if (isBoxTick) {
+    // The checkbox lives in the bot's report comment; only write-access users
+    // can edit it, but verify the editor's permission explicitly anyway.
+    try {
+      const { data: perm } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+        owner,
+        repo,
+        username: senderLogin,
+      });
+      if (!['admin', 'write', 'maintain'].includes(perm.permission)) {
+        core.notice(`Ignoring checkbox approval from ${senderLogin} (permission: ${perm.permission}).`);
+        return;
+      }
+    } catch (err) {
+      core.warning(`Could not verify ${senderLogin}'s permission — ignoring checkbox approval: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+  } else {
+    if (!isApproveComment(commentBody)) {
+      core.info('Comment is not a /vrt approve command or a checked approval box — nothing to do.');
+      return;
+    }
+    if (ctx.payload.action === 'edited') {
+      core.info('Edited /vrt approve comments are not re-processed — post a new comment to approve.');
+      return;
+    }
+    if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association)) {
+      core.notice(`Ignoring /vrt approve from author_association "${association}" — approvals require write access.`);
+      return;
+    }
+  }
   const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
   const runs = await findVrtRunsToRerun(octokit, owner, repo, pr.head.sha);
   const runUrls: string[] = [];
@@ -227,8 +256,9 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
   }
   if (runs.length === 0) core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
   if (commentId) await reactToComment(octokit, owner, repo, commentId);
-  const user: string = ctx.payload.comment?.user?.login ?? 'someone';
-  await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalReceivedBody(user, commentBody, runUrls));
+  const user: string = isBoxTick ? senderLogin : (ctx.payload.comment?.user?.login ?? 'someone');
+  const requested = isBoxTick ? `/vrt approve all@${checkboxPin(commentBody)}` : commentBody;
+  await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalReceivedBody(user, requested, runUrls));
 }
 
 run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));

@@ -82,7 +82,11 @@ The report inlines every screenshot as a base64 data URI directly in the HTML, s
 
 ## Approving changes
 
-An intentional visual change leaves the check red — and if the check is required by branch protection, you need a way to accept it without weakening the gate. That's what `/vrt approve` is for:
+An intentional visual change leaves the check red — and if the check is required by branch protection, you need a way to accept it without weakening the gate.
+
+**The one-click path:** the report comment on the PR includes an "Approve all changes" checkbox. Tick it and the failed check reruns and passes automatically. Only users with write access can tick it (GitHub restricts editing the bot's comment), and it pins the current commit — pushing new commits renders it stale.
+
+**The review path** uses `/vrt approve` commands:
 
 1. Open the report and hit **Review changes**. Approve (`A`) or reject (`R`) each screenshot as you step through.
 2. The report assembles a command as you go, e.g. `/vrt approve home.png@1a2b3c4d5e6f old.png@9f8e7d6c5b4a` — each entry pins a hash of that screenshot's exact pixels. Copy it.
@@ -103,12 +107,12 @@ To enable auto-rerun, add this second workflow ([examples/vrt-approvals.yml](exa
 name: VRT approvals
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 permissions:
   contents: read
 jobs:
   approve:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/vrt approve') }}
+    if: ${{ github.event.issue.pull_request && (startsWith(github.event.comment.body, '/vrt approve') || contains(github.event.comment.body, 'vrt:approve-all')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

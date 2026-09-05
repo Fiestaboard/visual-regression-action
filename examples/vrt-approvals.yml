@@ -6,14 +6,14 @@ name: VRT approvals
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   contents: read
 
 jobs:
   approve:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/vrt approve') }}
+    if: ${{ github.event.issue.pull_request && (startsWith(github.event.comment.body, '/vrt approve') || contains(github.event.comment.body, 'vrt:approve-all')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

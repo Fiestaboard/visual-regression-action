@@ -26,6 +26,18 @@ interface CommentLike {
   body?: string;
   author_association?: string;
   created_at?: string;
+  user?: { login?: string } | null;
+}
+
+/** Only the bot-authored report comment may carry trusted approve-all checkboxes:
+ * GitHub restricts editing others' comments (ticking the box) to users with write
+ * access, so a checked box implies an authorized approver. */
+const CHECKBOX_AUTHOR = 'github-actions[bot]';
+const CHECKED_BOX = /-\s*\[x\]\s*<!--\s*vrt:approve-all@([0-9a-f]{7,40})\s*-->/gi;
+
+export function checkboxPin(body: string): string | null {
+  const m = /-\s*\[x\]\s*<!--\s*vrt:approve-all@([0-9a-f]{7,40})\s*-->/i.exec(body);
+  return m ? m[1].toLowerCase() : null;
 }
 
 export function parseApprovalCommands(comments: CommentLike[]): ApprovalSet {
@@ -33,7 +45,11 @@ export function parseApprovalCommands(comments: CommentLike[]): ApprovalSet {
   const allShas: string[] = [];
   const allTimestamps: string[] = [];
   for (const c of comments) {
-    if (!c.body || !isApproveComment(c.body) || !AUTHORIZED.has(c.author_association ?? '')) continue;
+    if (!c.body) continue;
+    if (c.user?.login === CHECKBOX_AUTHOR) {
+      for (const m of c.body.matchAll(CHECKED_BOX)) allShas.push(m[1].toLowerCase());
+    }
+    if (!isApproveComment(c.body) || !AUTHORIZED.has(c.author_association ?? '')) continue;
     const tokens = c.body.replace(/^\s*\/vrt\s+approve\b/, '').trim().split(/\s+/).filter(Boolean);
     for (const token of tokens) {
       if (token === 'all') {
