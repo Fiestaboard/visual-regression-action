@@ -902,7 +902,7 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
   var goBtn = cmdbar.querySelector('.go');
   if (goBtn) goBtn.addEventListener('click', function () {
     copyCmd(function () {});
-    window.open(PR_URL + '#new_comment_field', '_blank');
+    window.open(PR_URL + '#issue-comment-box', '_blank');
   });
   cmdbar.querySelector('.reset').addEventListener('click', function () {
     decisions = cards.map(function () { return null; });

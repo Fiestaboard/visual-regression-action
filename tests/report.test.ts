@@ -216,7 +216,7 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('data-mode="blink"');
     expect(html).toContain('lb-dots');
     expect(html).toContain('localStorage');
-    expect(html).toContain('new_comment_field');
+    expect(html).toContain('issue-comment-box');
   });
 
   it('command bar guides the reviewer through all states', () => {
