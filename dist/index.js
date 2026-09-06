@@ -86501,6 +86501,11 @@ function generateHtmlReport(summary, meta) {
   .lb-foot { display:flex; gap:18px; padding:10px 20px; font-size:12px; color:#9a9a9a;
     flex-wrap:wrap; align-items:center }
   .lb-foot .scrub { width:220px; margin:0 }
+  .zoomctl { display:flex; gap:6px; align-items:center }
+  .zoomctl button { border:1px solid #3a3d44; background:transparent; color:#e8e8e8;
+    border-radius:8px; padding:3px 10px; font-size:12px }
+  .zoomctl button[aria-pressed="true"] { background:#e8e8e8; color:#111; border-color:#e8e8e8 }
+  .zlevel { font-variant-numeric:tabular-nums; min-width:44px }
   kbd { border:1px solid #3a3d44; border-bottom-width:2px; border-radius:4px;
     padding:0 5px; font:11px ui-monospace,Menlo,monospace }
   .cmdbar { position:fixed; left:0; right:0; bottom:0; z-index:12; display:flex; gap:10px;
@@ -86568,6 +86573,11 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
   </div>
   <div class="lb-foot">
     <input class="scrub" type="range" min="0" max="100" value="50" aria-label="swipe position">
+    <span class="zoomctl">
+      <button class="zfit" type="button" aria-pressed="true">Fit <kbd>F</kbd></button>
+      <button class="z100" type="button" aria-pressed="false">100% <kbd>1</kbd></button>
+      <span class="zlevel"></span>
+    </span>
     <span class="lb-progresslabel">progress</span>
     <div class="lb-dots" role="tablist" aria-label="review progress"></div>
     <span class="lb-tally"></span>
@@ -86774,10 +86784,28 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
   var cmdbar = document.querySelector('.cmdbar');
   var cmdInput = cmdbar.querySelector('.cmd');
   var idx = 0, scale = 1, tx = 0, ty = 0, mode = 'swipe';
+  var natW = 0, natH = 0, zoomState = 'fit';
+  var zFit = lb.querySelector('.zfit'), z100 = lb.querySelector('.z100'), zLevel = lb.querySelector('.zlevel');
+  function updateZoomUI() {
+    zFit.setAttribute('aria-pressed', String(zoomState === 'fit'));
+    z100.setAttribute('aria-pressed', String(zoomState === 'actual'));
+    zLevel.textContent = Math.round(scale * 100) + '%';
+  }
+  function fitScale() {
+    if (!natW || !natH) return 1;
+    return Math.min(1, (zoomWrap.clientWidth - 48) / natW, (zoomWrap.clientHeight - 48) / natH);
+  }
+  function setZoom(state) {
+    zoomState = state;
+    scale = state === 'actual' ? 1 : fitScale();
+    tx = 0; ty = 0;
+    apply();
+    updateZoomUI();
+  }
   function apply() {
     canvas.style.transform = 'translate(-50%,-50%) translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
   }
-  function resetZoom() { scale = 1; tx = 0; ty = 0; apply(); }
+  function resetZoom() { setZoom('fit'); }
   function buildDots() {
     dotsWrap.innerHTML = '';
     cards.forEach(function (c, i) {
@@ -86888,7 +86916,12 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     voteA.setAttribute('aria-pressed', String(decisions[idx] === true));
     voteR.setAttribute('aria-pressed', String(decisions[idx] === false));
     var src = function (sel) { var el = c.querySelector(sel); return el ? el.src : ''; };
-    var w = 'min(88vw, 1400px)';
+    var ref = c.querySelector(changed ? '.shot-current' : '.single img');
+    natW = ref ? ref.naturalWidth : 0;
+    natH = ref ? ref.naturalHeight : 0;
+    // Frames render at natural size so scale 1 means one image pixel per CSS
+    // pixel — that is what makes the 100% toggle honest.
+    var w = natW ? natW + 'px' : 'min(88vw, 1400px)';
     var html;
     if (!changed) {
       html = '<div class="frame" style="width:' + w + '"><img src="' + src('.single img') + '" alt=""></div>';
@@ -86913,7 +86946,9 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     canvas.innerHTML = html;
     var lbBlink = canvas.querySelector('.blink-frame');
     if (lbBlink) lbBlink.addEventListener('click', function () { lbBlink.classList.toggle('showbase'); });
-    apply();
+    var single = mode !== 'sbs' || !changed;
+    lb.querySelector('.zoomctl').style.display = single ? '' : 'none';
+    if (single) { setZoom(zoomState); } else { scale = 1; tx = 0; ty = 0; apply(); }
     updateDots();
     updateTally();
   }
@@ -86961,8 +86996,11 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
   });
   zoomWrap.addEventListener('wheel', function (e) {
     e.preventDefault();
-    var next = Math.max(0.25, Math.min(8, scale * Math.exp(-e.deltaY * 0.0015)));
-    scale = next; apply();
+    var next = Math.max(0.1, Math.min(8, scale * Math.exp(-e.deltaY * 0.0015)));
+    scale = next;
+    zoomState = 'free';
+    apply();
+    updateZoomUI();
   }, { passive: false });
   zoomWrap.addEventListener('pointerdown', function (e) {
     if (e.target.closest('.handle')) return;
@@ -86978,6 +87016,8 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     });
   });
   zoomWrap.addEventListener('dblclick', resetZoom);
+  zFit.addEventListener('click', function () { setZoom('fit'); });
+  z100.addEventListener('click', function () { setZoom('actual'); });
   lb.querySelectorAll('.lb-bar .tab').forEach(function (tab) {
     tab.addEventListener('click', function () { mode = tab.dataset.mode; show(idx); });
   });
@@ -87001,6 +87041,8 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
     else if (e.key === 'a' || e.key === 'A') { vote(true); }
     else if (e.key === 'r' || e.key === 'R') { vote(false); }
     else if (e.key === 'u' || e.key === 'U') { nextUnreviewed(); }
+    else if (e.key === 'f' || e.key === 'F') { setZoom('fit'); }
+    else if (e.key === '1') { setZoom('actual'); }
   });
 
   loadDecisions();

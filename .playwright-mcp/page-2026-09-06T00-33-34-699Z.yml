@@ -1,0 +1,87 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "Visual regression report" [level=1] [ref=e3]
+    - button "Start review" [ref=e4] [cursor=pointer]
+    - button "🔄 Changed · 1" [pressed] [ref=e5] [cursor=pointer]
+    - button "✨ Added · 1" [pressed] [ref=e6] [cursor=pointer]
+    - button "🗑️ Removed · 1" [pressed] [ref=e7] [cursor=pointer]
+    - button "✅ Unchanged · 1" [pressed] [ref=e8] [cursor=pointer]
+    - combobox "sort order" [ref=e9]:
+      - option "Review order" [selected]
+      - option "Largest diff first"
+    - generic [ref=e10]: 1 of 2 reviewed
+    - generic [ref=e12]:
+      - text: Fiestaboard/demo · commit abc1234 ·
+      - link "workflow run" [ref=e13] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/1
+      - text: · baseline from
+      - link "this run" [ref=e14] [cursor=pointer]:
+        - /url: https://github.com/Fiestaboard/demo/actions/runs/0
+  - generic [ref=e15]:
+    - complementary [ref=e16]:
+      - link "home.png 1.95% ✓" [ref=e17] [cursor=pointer]:
+        - /url: "#card-0"
+        - generic [ref=e19]: home.png
+        - generic [ref=e20]: 1.95%
+        - generic [ref=e21]: ✓
+      - link "dashboard.png added" [ref=e22] [cursor=pointer]:
+        - /url: "#card-1"
+        - generic [ref=e24]: dashboard.png
+        - generic [ref=e25]: added
+      - link "profile.png removed" [ref=e26] [cursor=pointer]:
+        - /url: "#card-2"
+        - generic [ref=e28]: profile.png
+        - generic [ref=e29]: removed
+      - link "settings.png unchanged" [ref=e30] [cursor=pointer]:
+        - /url: "#card-3"
+        - generic [ref=e32]: settings.png
+        - generic [ref=e33]: unchanged
+    - main [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - generic [ref=e37]: 🔄 Changed
+          - heading "home.png" [level=3] [ref=e38]
+          - generic [ref=e39]: 1.95%
+          - generic [ref=e40]:
+            - button "✓" [pressed] [ref=e41] [cursor=pointer]
+            - button "✗" [ref=e42] [cursor=pointer]
+          - button "Expand ⤢" [ref=e43] [cursor=pointer]
+        - generic [ref=e46]:
+          - tablist [ref=e47]:
+            - tab "Swipe" [selected] [ref=e48] [cursor=pointer]
+            - tab "Overlay" [ref=e49] [cursor=pointer]
+            - tab "Blink" [ref=e50] [cursor=pointer]
+            - tab "Side-by-side" [ref=e51] [cursor=pointer]
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - img "current" [ref=e54]
+              - img "baseline" [ref=e55]
+              - generic [aria-hidden] [ref=e56]: ◂ ▸
+            - slider "swipe position" [ref=e57]: "50"
+            - paragraph [ref=e58]: "left of the line: baseline · right: current"
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: ✨ Added
+          - heading "dashboard.png" [level=3] [ref=e62]
+          - button "Expand ⤢" [ref=e63] [cursor=pointer]
+        - figure "Current (new)" [ref=e65]:
+          - img "current (new)" [ref=e67]
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - generic [ref=e70]: 🗑️ Removed
+          - heading "profile.png" [level=3] [ref=e71]
+          - generic [ref=e72]:
+            - button "✓" [ref=e73] [cursor=pointer]
+            - button "✗" [ref=e74] [cursor=pointer]
+          - button "Expand ⤢" [ref=e75] [cursor=pointer]
+        - figure "Baseline (removed)" [ref=e77]:
+          - img "baseline (removed)" [ref=e79]
+      - generic [ref=e81]:
+        - generic [ref=e82]: ✅ Unchanged
+        - heading "settings.png" [level=3] [ref=e83]
+  - generic [ref=e84]:
+    - generic [ref=e85]: ⚠️ Covers 1 of 2 — 1 still unreviewed. The check stays red until every changed/removed screenshot is approved.
+    - textbox "approval command" [ref=e86]: /vrt approve home.png@abc1234
+    - button "Copy & open PR ↗" [ref=e87] [cursor=pointer]
+    - button "Copy" [ref=e88] [cursor=pointer]
+    - button "Reset review" [ref=e89] [cursor=pointer]

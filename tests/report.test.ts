@@ -217,6 +217,9 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('lb-dots');
     expect(html).toContain('localStorage');
     expect(html).toContain('issue-comment-box');
+    expect(html).toContain('Fit <kbd>F</kbd>');
+    expect(html).toContain('100% <kbd>1</kbd>');
+    expect(html).toContain('naturalWidth');
   });
 
   it('command bar guides the reviewer through all states', () => {
