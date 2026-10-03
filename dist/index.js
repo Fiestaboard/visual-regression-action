@@ -85593,6 +85593,7 @@ exports.listPrComments = listPrComments;
 exports.upsertMarkedComment = upsertMarkedComment;
 exports.upsertStickyComment = upsertStickyComment;
 const core = __importStar(__nccwpck_require__(37484));
+const retry_1 = __nccwpck_require__(49809);
 exports.COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
 function commentMarker(key) {
     return key ? `<!-- fiestaboard/visual-regression-action:${key} -->` : exports.COMMENT_MARKER;
@@ -85600,7 +85601,9 @@ function commentMarker(key) {
 const MAX_COMMENT_PAGES = 10;
 async function findMarkedComment(octokit, owner, repo, prNumber, marker) {
     for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
-        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+        // Retried for the same reason as listPrComments below: when nothing
+        // needed approving, this is the first request after the long diff.
+        const { data } = await (0, retry_1.withRetry)(() => octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page }));
         const existing = data.find((c) => c.body?.includes(marker));
         if (existing)
             return existing;
@@ -85609,11 +85612,20 @@ async function findMarkedComment(octokit, owner, repo, prNumber, marker) {
     }
     return undefined;
 }
-/** All PR comments (paginated, capped) — used to collect /vrt approve commands. */
-async function listPrComments(octokit, owner, repo, prNumber) {
+/**
+ * All PR comments (paginated, capped) — used to collect /vrt approve commands.
+ *
+ * Each page is retried. In compare mode this is the first API request after
+ * the pixel diff, which runs synchronously for long enough on a large suite
+ * that the connection opened before it has been closed by the server. That
+ * request used to fail with "other side closed", the caller logged a warning
+ * and counted zero approvals, and a PR whose every change had been approved
+ * stayed red no matter how often the check was re-run.
+ */
+async function listPrComments(octokit, owner, repo, prNumber, retry = {}) {
     const out = [];
     for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
-        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+        const { data } = await (0, retry_1.withRetry)(() => octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page }), retry);
         out.push(...data);
         if (data.length < 100)
             break;
@@ -87052,6 +87064,55 @@ ${ordered.map((r, i) => card(r, pin, i)).join('\n')}
 </script>
 </body>
 </html>`;
+}
+
+
+/***/ }),
+
+/***/ 49809:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.withRetry = withRetry;
+/**
+ * Whether asking again could change the answer.
+ *
+ * A network failure (no HTTP status at all) or a 5xx can. A 4xx cannot: the
+ * token still lacks the scope and the PR still does not exist, so retrying
+ * only delays the real error.
+ */
+function isRetryable(err) {
+    const status = err?.status;
+    return typeof status !== 'number' || status >= 500;
+}
+/**
+ * Run `fn`, retrying failures that a second attempt can plausibly fix.
+ *
+ * Exists for one case in particular. Compare mode pixel-diffs every
+ * screenshot synchronously, and on a large suite that blocks the event loop
+ * for the better part of a minute. The API connection opened before the diff
+ * sits idle past its keep-alive, the server closes it, and the first request
+ * afterwards goes out on the dead socket and fails with "other side closed".
+ * The failed request is what makes the client drop that socket, so the very
+ * next attempt opens a fresh one and succeeds.
+ */
+async function withRetry(fn, options = {}) {
+    const attempts = Math.max(1, options.attempts ?? 3);
+    const delayMs = options.delayMs ?? 500;
+    for (let attempt = 1;; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (err) {
+            if (attempt >= attempts || !isRetryable(err))
+                throw err;
+            const wait = delayMs * 2 ** (attempt - 1);
+            if (wait > 0)
+                await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+    }
 }
 
 
