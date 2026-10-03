@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import { withRetry, type RetryOptions } from './retry';
 
 export const COMMENT_MARKER = '<!-- fiestaboard/visual-regression-action -->';
 
@@ -32,7 +33,11 @@ async function findMarkedComment(
   marker: string
 ): Promise<{ id: number; body?: string } | undefined> {
   for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
-    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+    // Retried for the same reason as listPrComments below: when nothing
+    // needed approving, this is the first request after the long diff.
+    const { data } = await withRetry(() =>
+      octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page })
+    );
     const existing = data.find((c) => c.body?.includes(marker));
     if (existing) return existing;
     if (data.length < 100) return undefined;
@@ -40,16 +45,29 @@ async function findMarkedComment(
   return undefined;
 }
 
-/** All PR comments (paginated, capped) — used to collect /vrt approve commands. */
+/**
+ * All PR comments (paginated, capped) — used to collect /vrt approve commands.
+ *
+ * Each page is retried. In compare mode this is the first API request after
+ * the pixel diff, which runs synchronously for long enough on a large suite
+ * that the connection opened before it has been closed by the server. That
+ * request used to fail with "other side closed", the caller logged a warning
+ * and counted zero approvals, and a PR whose every change had been approved
+ * stayed red no matter how often the check was re-run.
+ */
 export async function listPrComments(
   octokit: MinimalOctokit,
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  retry: RetryOptions = {}
 ): Promise<Array<{ id: number; body?: string; author_association?: string; created_at?: string; user?: { login?: string } | null }>> {
   const out: Array<{ id: number; body?: string; author_association?: string; created_at?: string; user?: { login?: string } | null }> = [];
   for (let page = 1; page <= MAX_COMMENT_PAGES; page++) {
-    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page });
+    const { data } = await withRetry(
+      () => octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100, page }),
+      retry
+    );
     out.push(...data);
     if (data.length < 100) break;
   }
