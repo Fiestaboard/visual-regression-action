@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseApprovalCommands, applyApprovals, shortHash, isApproveComment } from '../src/approvals';
+import { parseApprovalCommands, applyApprovals, shortHash, isApproveComment, checkboxItems, encodeItemMarker, boxTick } from '../src/approvals';
 import { CompareSummary } from '../src/types';
 
 const OK = 'COLLABORATOR';
@@ -69,6 +69,23 @@ describe('parseApprovalCommands', () => {
     expect(a.allShas).toEqual(['abc1234']);
   });
 
+  it('collects ticked per-screenshot boxes from the bot comment as commit-pinned entries', () => {
+    const bot = { login: 'github-actions[bot]' };
+    const body = [
+      '- [ ] <!-- vrt:approve-all@abc1234 --> **Approve all 2 changes**',
+      '- [x] <!-- vrt:approve@abc1234:home.png --> 🔄 `home.png` — 1.00% changed',
+      `- [ ] <!-- vrt:approve@abc1234:${encodeItemMarker('nav/old menu.png')} --> 🗑️ removed`,
+    ].join('\n');
+    const a = parseApprovalCommands([
+      { body, author_association: 'NONE', user: bot },
+      { body: '- [x] <!-- vrt:approve@deadbee:old.png -->', author_association: 'OWNER', user: { login: 'someone' } },
+    ]);
+    expect(a.entries.get('home.png')).toEqual(['abc1234']);
+    expect(a.entries.has('nav/old menu.png')).toBe(false); // unticked
+    expect(a.entries.has('old.png')).toBe(false); // not the bot's comment
+    expect(a.allShas).toEqual([]);
+  });
+
   it('ignores unchecked checkboxes', () => {
     const a = parseApprovalCommands([
       { body: '- [ ] <!-- vrt:approve-all@abc1234 --> **Approve all**', author_association: 'NONE', user: { login: 'github-actions[bot]' } },
@@ -82,6 +99,47 @@ describe('parseApprovalCommands', () => {
       comment('/vrt approve all', 'NONE', '2026-09-05T13:00:00Z'),
     ]);
     expect(a.allTimestamps).toEqual(['2026-09-05T12:00:00Z']);
+  });
+});
+
+describe('checkboxItems', () => {
+  it('lists every per-screenshot box with its tick state, decoding names', () => {
+    const body = [
+      '- [X] <!-- vrt:approve@abc1234:home.png -->',
+      `- [ ] <!-- vrt:approve@abc1234:${encodeItemMarker('a-b c.png')} -->`,
+      '- [x] <!-- vrt:approve-all@abc1234 -->',
+      '- [x] <!-- vrt:approve@abc1234:%E0%A4%A -->', // malformed encoding is skipped
+    ].join('\n');
+    expect(checkboxItems(body)).toEqual([
+      { name: 'home.png', pin: 'abc1234', checked: true },
+      { name: 'a-b c.png', pin: 'abc1234', checked: false },
+    ]);
+  });
+});
+
+describe('boxTick', () => {
+  const items = (a: string, b: string) =>
+    [`- [${a}] <!-- vrt:approve@abc1234:home.png -->`, `- [${b}] <!-- vrt:approve@abc1234:old.png -->`];
+  const all = (x: string) => `- [${x}] <!-- vrt:approve-all@abc1234 --> **Approve all**`;
+
+  it('is "none" when nothing is ticked', () => {
+    expect(boxTick([all(' '), ...items(' ', ' ')].join('\n'))).toEqual({ kind: 'none' });
+    expect(boxTick('just a comment')).toEqual({ kind: 'none' });
+  });
+
+  it('is "partial" while some screenshots are still unticked — no rerun yet', () => {
+    expect(boxTick([all(' '), ...items('x', ' ')].join('\n'))).toEqual({ kind: 'partial', ticked: 1, total: 2 });
+  });
+
+  it('is "complete" once every screenshot is ticked', () => {
+    expect(boxTick([all(' '), ...items('x', 'x')].join('\n'))).toEqual({
+      kind: 'complete',
+      command: '/vrt approve home.png@abc1234 old.png@abc1234',
+    });
+  });
+
+  it('is "complete" when Approve all is ticked, however many screenshots are', () => {
+    expect(boxTick([all('x'), ...items(' ', ' ')].join('\n'))).toEqual({ kind: 'complete', command: '/vrt approve all@abc1234' });
   });
 });
 
@@ -128,6 +186,15 @@ describe('applyApprovals', () => {
     const s = summary();
     const a = parseApprovalCommands([comment('/vrt approve home.png@deadbee')]);
     expect(applyApprovals(s, a, '0123456abcdef0')).toBe(0);
+  });
+
+  it('a ticked per-screenshot box approves that screenshot at the current head only', () => {
+    const body = '- [x] <!-- vrt:approve@deadbee:home.png -->';
+    const a = parseApprovalCommands([{ body, user: { login: 'github-actions[bot]' } }]);
+    const s = summary();
+    expect(applyApprovals(s, a, 'deadbeefcafe00')).toBe(1);
+    expect(s.results[0].approved).toBe(true);
+    expect(applyApprovals(summary(), a, '0123456abcdef0')).toBe(0);
   });
 
   it('stale hashes do not approve', () => {

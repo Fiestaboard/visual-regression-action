@@ -2,29 +2,43 @@
   "name": "visual-regression-action",
   "version": "1.9.1",
   "private": true,
-  "description": "Visual regression testing for GitHub Actions with artifact-based baselines — no screenshots in git",
+  "type": "module",
+  "description": "Visual regression testing for GitHub Actions with artifact-based baselines \u2014 no screenshots in git",
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build src/main.ts -o dist --license licenses.txt",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "coverage": "vitest run --coverage"
+    "typecheck": "tsc --noEmit && tsc -p report-ui/tsconfig.json --noEmit",
+    "coverage": "vitest run --coverage",
+    "build:ui": "vite build --config report-ui/vite.config.ts && node scripts/embed-report-template.mjs",
+    "dev:ui": "vite --config report-ui/vite.config.ts"
   },
   "license": "MIT",
   "dependencies": {
-    "@actions/artifact": "^2.3.2",
-    "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.0",
+    "@actions/artifact": "^6.3.1",
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
     "pixelmatch": "^5.3.0",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
+    "@fiestaboard/ui": "^8.4.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vercel/ncc": "^0.38.3",
-    "@vitest/coverage-v8": "^3.2.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/coverage-v8": "^4.1.12",
+    "lucide-react": "^1.59.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3",
-    "vitest": "^3.0.0"
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.12"
   }
 }

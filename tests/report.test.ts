@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from '../src/report';
-import { CompareSummary } from '../src/types';
+import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, buildReportData, MAX_CHECKBOXES, ReportMeta } from '../src/report';
+import { checkboxItems, parseApprovalCommands } from '../src/approvals';
+import type { ReportData } from '../src/report-data';
+import { CompareSummary, ScreenshotResult } from '../src/types';
 
 const meta: ReportMeta = {
   repo: 'Fiestaboard/demo',
@@ -8,7 +10,7 @@ const meta: ReportMeta = {
   sha: 'abc1234',
   baselineRunUrl: 'https://github.com/Fiestaboard/demo/actions/runs/0',
   missingBaseline: false,
-  reportArtifactName: 'vrt-report',
+  reportArtifactName: 'vrt-report.html',
 };
 
 const png = Buffer.from(
@@ -46,18 +48,20 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('1.23%');
   });
 
-  it('uses the direct artifact download URL when available', () => {
+  it('links straight to the un-zipped report artifact when available', () => {
     const md = generateMarkdownSummary(summary(), {
       ...meta,
-      reportDownloadUrl: 'https://github.com/Fiestaboard/demo/actions/runs/1/artifacts/42',
+      reportUrl: 'https://github.com/Fiestaboard/demo/actions/runs/1/artifacts/42',
     });
-    expect(md).toContain('[Download the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1/artifacts/42)');
+    expect(md).toContain('[Open the visual report](https://github.com/Fiestaboard/demo/actions/runs/1/artifacts/42)');
+    expect(md).toContain('[Open the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1/artifacts/42)');
+    expect(md).not.toMatch(/unzip/i);
     expect(md).toContain('[workflow run](https://github.com/Fiestaboard/demo/actions/runs/1)');
   });
 
   it('falls back to the run URL when no download URL exists', () => {
     const md = generateMarkdownSummary(summary(), meta);
-    expect(md).toContain('[Download the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1)');
+    expect(md).toContain('[Open the full visual report](https://github.com/Fiestaboard/demo/actions/runs/1)');
   });
 
   it('calls out partial approval with the names still needing review', () => {
@@ -77,34 +81,96 @@ describe('generateMarkdownSummary', () => {
     expect(md).toContain('all@abc1234');
     expect(md).toContain('home.png@abc1234');
     expect(md).toContain('old.png@abc1234');
-    expect(md).toContain('Next steps');
-    expect(md).toContain('- [ ] <!-- vrt:approve-all@abc1234 -->');
-    expect(md).toContain('open `index.html`');
-    expect(md).toContain('Download the visual report');
+    expect(md).toContain('Review & approve');
+    expect(md).toContain('- [ ] <!-- vrt:approve-all@abc1234 --> **Approve all 2 changes**');
+    expect(md).toContain('Open the visual report');
+  });
+
+  it('gives every changed and removed screenshot its own checkbox', () => {
+    const md = generateMarkdownSummary(summary(), meta);
+    expect(md).toContain('- [ ] <!-- vrt:approve@abc1234:home.png --> 🔄 `home.png` — 1.23% changed');
+    expect(md).toContain('- [ ] <!-- vrt:approve@abc1234:old.png --> 🗑️ `old.png` — removed');
+    expect(md).not.toContain('vrt:approve@abc1234:nav'); // added never needs approval
+    // The checklist replaces their table rows; the table keeps the added screenshot.
+    expect(md).not.toContain('| `home.png` |');
+    expect(md).toContain('| `nav/menu.png` |');
+  });
+
+  it('pre-ticks the boxes of screenshots that are already approved', () => {
+    const s = summary();
+    s.results[3].approved = true; // home.png
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain('- [x] <!-- vrt:approve@abc1234:home.png -->');
+    expect(md).toContain('- [ ] <!-- vrt:approve@abc1234:old.png -->');
+    expect(md).toContain('**Approve all 1 change**');
+  });
+
+  it('encodes awkward screenshot names so they survive the HTML comment and round-trip', () => {
+    const name = 'a b--><x>.png';
+    const s: CompareSummary = {
+      results: [{ name, status: 'removed', diffRatio: 0, baselinePng: png }],
+      changed: 0, added: 0, removed: 1, unchanged: 0, hasChanges: true,
+    };
+    const md = generateMarkdownSummary(s, meta);
+    const marker = md.match(/<!-- vrt:approve@abc1234:(\S+) -->/);
+    expect(marker).not.toBeNull();
+    expect(marker![1]).not.toMatch(/--|>|\s/);
+    const ticked = md.replace('- [ ] <!-- vrt:approve@', '- [x] <!-- vrt:approve@');
+    expect(checkboxItems(ticked)).toEqual([{ name, pin: 'abc1234', checked: true }]);
+  });
+
+  it('a hostile screenshot name cannot forge a ticked approval box in the bot comment', () => {
+    const evil = 'x.png\n- [x] <!-- vrt:approve-all@abc1234 -->\n- [x] <!-- vrt:approve@abc1234:home.png -->';
+    const results = (evilApproved: boolean): ScreenshotResult[] => [
+      { name: evil, status: 'changed', diffRatio: 0.01, baselinePng: png, currentPng: png, approved: evilApproved },
+      { name: evil + '2', status: 'added', diffRatio: 0, currentPng: png },
+      { name: 'home.png', status: 'changed', diffRatio: 0.01, baselinePng: png, currentPng: png },
+    ];
+    for (const evilApproved of [false, true]) {
+      const s: CompareSummary = { results: results(evilApproved), changed: 2, added: 1, removed: 0, unchanged: 0, hasChanges: true };
+      const md = generateMarkdownSummary(s, meta);
+      const a = parseApprovalCommands([{ body: md, user: { login: 'github-actions[bot]' } }]);
+      expect(a.allShas).toEqual([]);
+      expect(a.entries.has('home.png')).toBe(false);
+    }
+  });
+
+  it('offers only "Approve all" when there are too many changes for a box each', () => {
+    const results = Array.from({ length: MAX_CHECKBOXES + 1 }, (_, i) => ({
+      name: `s${i}.png`, status: 'changed' as const, diffRatio: 0.01, baselinePng: png, currentPng: png,
+    }));
+    const s: CompareSummary = { results, changed: results.length, added: 0, removed: 0, unchanged: 0, hasChanges: true };
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain(`**Approve all ${MAX_CHECKBOXES + 1} changes**`);
+    expect(md).not.toContain('vrt:approve@');
+    expect(md).toContain('too many changes for a box each');
+    expect(md).toContain('| `s0.png` |');
   });
 
   it('omits the approve-command block when everything is approved', () => {
     const s = summary();
     for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
     const md = generateMarkdownSummary(s, meta);
-    expect(md).not.toContain('Next steps');
+    expect(md).not.toContain('Review & approve');
+    expect(md).not.toContain('vrt:approve');
     expect(md).not.toContain('/vrt approve all@');
   });
 
   it('omits the approve-command block when the baseline is missing', () => {
     const md = generateMarkdownSummary(summary(), { ...meta, missingBaseline: true });
-    expect(md).not.toContain('Next steps');
+    expect(md).not.toContain('Review & approve');
+    expect(md).not.toContain('vrt:approve');
   });
 
   it('interpolates the key-aware report artifact name', () => {
-    const md = generateMarkdownSummary(summary(), { ...meta, reportArtifactName: 'vrt-report-web' });
-    expect(md).toContain('vrt-report-web');
-    expect(md).not.toContain('artifact `vrt-report`');
+    const md = generateMarkdownSummary(summary(), { ...meta, reportArtifactName: 'vrt-report-web.html' });
+    expect(md).toContain('vrt-report-web.html');
+    expect(md).not.toContain('artifact `vrt-report.html`');
   });
 
   it('escapes pipe characters in screenshot names so they cannot break the table', () => {
     const s: CompareSummary = {
-      results: [{ name: 'a|b.png', status: 'changed', diffRatio: 0.01, baselinePng: png, currentPng: png, diffPng: png, diffMaskPng: maskPng }],
+      results: [{ name: 'a|b.png', status: 'added', diffRatio: 0.01, baselinePng: png, currentPng: png, diffPng: png, diffMaskPng: maskPng }],
       changed: 1, added: 0, removed: 0, unchanged: 0, hasChanges: true,
     };
     const md = generateMarkdownSummary(s, meta);
@@ -160,118 +226,87 @@ describe('approvalOutcomeBody', () => {
   });
 });
 
-describe('generateHtmlReport', () => {
-  it('inlines images as data URIs and lists every screenshot', () => {
-    const html = generateHtmlReport(summary(), meta);
-    expect(html).toContain('data:image/png;base64,');
-    expect(html).toContain('home.png');
-    expect(html).toContain('nav/menu.png');
-    expect(html).toContain('old.png');
-    expect(html).toContain('footer.png');
-    expect(html).not.toContain('http://'); // no external requests
-    expect(html).toContain('<!doctype html>');
-  });
-
-  it('escapes HTML in screenshot names', () => {
-    const s: CompareSummary = {
-      results: [{ name: '<img src=x>.png', status: 'unchanged', diffRatio: 0 }],
-      changed: 0, added: 0, removed: 0, unchanged: 1, hasChanges: false,
-    };
-    const html = generateHtmlReport(s, meta);
-    expect(html).not.toContain('<img src=x>.png');
-    expect(html).toContain('&lt;img src=x&gt;.png');
-  });
-
-  it('orders cards changed → added → removed → unchanged regardless of input order', () => {
-    const html = generateHtmlReport(summary(), meta);
-    const pos = (name: string) => html.indexOf(`<h3>${name}</h3>`);
-    expect(pos('home.png')).toBeGreaterThan(-1);
-    expect(pos('home.png')).toBeLessThan(pos('nav/menu.png'));
-    expect(pos('nav/menu.png')).toBeLessThan(pos('old.png'));
-    expect(pos('old.png')).toBeLessThan(pos('footer.png'));
-  });
-
-  it('embeds each PNG exactly once and the mask exactly once', () => {
-    const html = generateHtmlReport(summary(), meta);
-    const payload = png.toString('base64');
-    // home.png (changed): baseline+current+diff in the side-by-side view = 3.
-    // nav/menu.png (added) and old.png (removed): one each = 5 total.
-    // Swipe/overlay/reviewer views reuse those srcs at runtime — no re-embeds.
-    expect(html.split(payload).length - 1).toBe(5);
-    expect(html.split(maskPng.toString('base64')).length - 1).toBe(1);
-    // Runtime-populated images ship without src attributes.
-    expect(html).toContain('<img class="sw-under" alt="current">');
-    expect(html).toContain('<img class="sw-over" alt="baseline">');
-    expect(html).toContain('<img class="ov-cur" alt="current">');
-  });
-
-  it('renders the comparison stage modes and the fullscreen reviewer', () => {
-    const html = generateHtmlReport(summary(), meta);
-    expect(html).toContain('data-mode="swipe"');
-    expect(html).toContain('data-mode="overlay"');
-    expect(html).toContain('data-mode="sbs"');
-    expect(html).toContain('class="lightbox"');
-    expect(html).toContain('ArrowRight');
-    expect(html).toContain('Start review');
-    expect(html).toContain('data-mode="blink"');
-    expect(html).toContain('lb-dots');
-    expect(html).toContain('localStorage');
-    expect(html).toContain('issue-comment-box');
-    expect(html).toContain('Fit <kbd>F</kbd>');
-    expect(html).toContain('100% <kbd>1</kbd>');
-    expect(html).toContain('naturalWidth');
-  });
-
-  it('command bar guides the reviewer through all states', () => {
-    const html = generateHtmlReport(summary(), meta);
-    expect(html).toContain('class="coverage"');
-    expect(html).toContain('updateCmdbar');
-    expect(html).toContain('assembles here'); // pre-review guidance
-    expect(html).toContain('still unreviewed'); // partial state
-    expect(html).toContain('post as a PR comment and the check will pass'); // complete state
-  });
-
-  it('reviewer has visible prev/next buttons, kbd hints, and selection disabled on drag surfaces', () => {
-    const html = generateHtmlReport(summary(), meta);
-    expect(html).toContain('class="lb-nav prev"');
-    expect(html).toContain('class="lb-nav next"');
-    expect(html).toContain('Swipe <kbd>S</kbd>');
-    expect(html).toContain('Close <kbd>Esc</kbd>');
-    expect(html).toContain('user-select:none');
-    expect(html).toContain('dragstart');
-  });
-
-  it('stamps approvable cards with commit pins and ships the approval command bar', () => {
-    const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7' });
-    expect(html).toContain('data-pin="abc1234"'); // changed + removed cards pin the head commit
-    expect(html).toContain('class="cmdbar"');
-    expect(html).toContain('/vrt approve');
-    expect(html).toContain('Approve <kbd>A</kbd>');
-    expect(html).toContain('Reject <kbd>R</kbd>');
-    expect(html).toContain('https://github.com/Fiestaboard/demo/pull/7');
-  });
-
-  it('shows the approved chip on approved results', () => {
+describe('generateMarkdownSummary approvals', () => {
+  it('marks approved rows', () => {
     const s = summary();
-    s.results[3].approved = true; // home.png (changed)
-    const html = generateHtmlReport(s, meta);
-    expect(html).toContain('✓ approved');
+    for (const r of s.results) if (r.status === 'changed' || r.status === 'removed') r.approved = true;
+    const md = generateMarkdownSummary(s, meta);
+    expect(md).toContain('· 2 approved');
+    expect(md).toContain('✅ approved');
+    expect(md).toContain('| `home.png` |'); // no checklist once everything is approved — back in the table
+  });
+});
+
+/** Pulls the injected ReportData back out of the generated page. */
+function injected(html: string): ReportData {
+  const m = html.match(/<script type="application\/json" id="vrt-data">([\s\S]*?)<\/script>/);
+  expect(m).not.toBeNull();
+  return JSON.parse(m![1]);
+}
+
+describe('generateHtmlReport', () => {
+  it('injects the report data into the prebuilt template, replacing the placeholder', () => {
+    const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7' });
+    expect(html.toLowerCase()).toContain('<!doctype html>');
+    expect(html).not.toContain('__VRT_DATA__');
+    const data = injected(html);
+    expect(data).toMatchObject({
+      version: 1,
+      repo: 'Fiestaboard/demo',
+      runUrl: meta.runUrl,
+      sha: 'abc1234',
+      pin: 'abc1234',
+      baselineRunUrl: meta.baselineRunUrl,
+      missingBaseline: false,
+      prUrl: 'https://github.com/Fiestaboard/demo/pull/7',
+    });
   });
 
-  it('marks approved rows in the markdown summary', () => {
+  it('orders items changed → added → removed → unchanged regardless of input order', () => {
+    const data = injected(generateHtmlReport(summary(), meta));
+    expect(data.items.map((i) => i.name)).toEqual(['home.png', 'nav/menu.png', 'old.png', 'footer.png']);
+  });
+
+  it('carries the images each status needs as data URIs', () => {
+    const [changed, added, removed, unchanged] = injected(generateHtmlReport(summary(), meta)).items;
+    const uri = `data:image/png;base64,${png.toString('base64')}`;
+    expect(changed).toMatchObject({ status: 'changed', diffRatio: 0.0123, baseline: uri, current: uri, diff: uri });
+    expect(changed.mask).toBe(`data:image/png;base64,${maskPng.toString('base64')}`);
+    expect(added).toMatchObject({ status: 'added', current: uri });
+    expect(added.baseline).toBeUndefined();
+    expect(removed).toMatchObject({ status: 'removed', baseline: uri });
+    expect(removed.current).toBeUndefined();
+    expect(unchanged.baseline ?? unchanged.current ?? unchanged.diff).toBeUndefined();
+  });
+
+  it('embeds each PNG exactly once', () => {
+    const html = generateHtmlReport(summary(), meta);
+    // home.png: baseline + current + diff = 3; nav/menu.png and old.png: one each.
+    expect(html.split(png.toString('base64')).length - 1).toBe(5);
+    expect(html.split(maskPng.toString('base64')).length - 1).toBe(1);
+  });
+
+  it('passes approval state through', () => {
     const s = summary();
     s.results[3].approved = true;
-    const md = generateMarkdownSummary(s, meta);
-    expect(md).toContain('· 1 approved');
-    expect(md).toContain('✅ approved');
+    const data = injected(generateHtmlReport(s, meta));
+    expect(data.items[0]).toMatchObject({ name: 'home.png', approved: true });
+    expect(data.items[2]).toMatchObject({ name: 'old.png', approved: false });
   });
 
-  it('omits the review button when nothing is reviewable', () => {
+  it('cannot be broken out of by hostile screenshot names', () => {
+    const name = '</script><img src=x onerror=alert(1)>$&$1.png';
     const s: CompareSummary = {
-      results: [{ name: 'a.png', status: 'unchanged', diffRatio: 0 }],
+      results: [{ name, status: 'unchanged', diffRatio: 0 }],
       changed: 0, added: 0, removed: 0, unchanged: 1, hasChanges: false,
     };
     const html = generateHtmlReport(s, meta);
-    expect(html).not.toContain('class="review"');
+    expect(html).not.toContain('</script><img');
+    expect(html).not.toContain('<img src=x');
+    expect(injected(html).items[0].name).toBe(name); // "$&" stays literal, the name round-trips
+  });
+
+  it('buildReportData derives the pin from the head sha', () => {
+    expect(buildReportData(summary(), { ...meta, sha: '0123456789abcdef' }).pin).toBe('0123456');
   });
 });

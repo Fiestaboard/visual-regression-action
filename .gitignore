@@ -3,3 +3,4 @@ e2e-tmp/
 *.tsbuildinfo
 demo-screens/
 coverage/
+report-ui/dist/

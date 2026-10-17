@@ -5,7 +5,7 @@ Visual regression testing for GitHub Actions — baselines live in build artifac
 ## How it works
 
 - **Pushes to your default branch publish a `vrt-baseline` artifact.** No screenshots are committed to git.
-- **Pull requests download the latest baseline from the base branch, diff it against the PR's screenshots, and report the result** — a sticky PR comment, a step summary, and a downloadable HTML report.
+- **Pull requests download the latest baseline from the base branch, diff it against the PR's screenshots, and report the result** — a sticky PR comment, a step summary, and an HTML report that opens straight in your browser.
 - **Merging the PR is the approval.** There's no "update baselines" step: once the PR lands, the default branch rebuilds and publishes fresh baselines automatically.
 
 If the baseline artifact is missing or expired (GitHub Actions artifacts expire after at most 90 days), every screenshot reports as "new," the job passes with a note, and the next default-branch build self-heals by publishing a new baseline.
@@ -74,9 +74,9 @@ Baseline mode (a push to the default branch) sets no outputs — there's nothing
 
 Results surface in three places:
 
-1. **Sticky PR comment** — a pass/fail headline, a counts table, and a direct download link for the report artifact, updated in place on every push (never spammed as a new comment each time).
+1. **Sticky PR comment** — a pass/fail headline, an approval checklist with one box per changed or removed screenshot plus **Approve all**, a table of added screenshots, and a link that opens the report. It updates in place on every push rather than adding a new comment each time.
 2. **`$GITHUB_STEP_SUMMARY`** — the same summary rendered on the workflow run page.
-3. **Downloadable `vrt-report[-<key>]` artifact** — a single self-contained `index.html`. Each changed screenshot gets a large comparison stage with three views: **Swipe** (drag a divider between baseline and current), **Overlay** (the current screenshot with detected changes highlighted in pink), and **Side-by-side** (baseline / current / diff thumbnails). A **fullscreen reviewer** steps through every change: `←`/`→` to move between screenshots, `S`/`O`/`D` to switch views, scroll to zoom, drag to pan, `Esc` to close. No external requests; open it locally after downloading.
+3. **`vrt-report[-<key>].html` artifact**: one self-contained HTML file, uploaded un-zipped so the link in the PR comment opens it directly in the browser. There's nothing to download or unzip. The reviewer is built with [FiestaUI](https://github.com/Fiestaboard/FiestaUI), the FiestaBoard design system. Each changed screenshot gets a large comparison stage with three views: **Swipe** (drag a divider between baseline and current), **Overlay** (the current screenshot with detected changes highlighted in pink), and **Side-by-side** (baseline / current / diff thumbnails). A **fullscreen reviewer** steps through every change: `←`/`→` to move between screenshots, `S`/`O`/`D` to switch views, scroll to zoom, drag to pan, `Esc` to close. It makes no external requests.
 
 The report inlines every screenshot as a base64 data URI directly in the HTML, so very large suites (many or very large screenshots) produce a correspondingly large artifact — keep screenshots reasonably sized (e.g. viewport-cropped rather than full-page where possible) if this becomes a concern.
 
@@ -84,7 +84,7 @@ The report inlines every screenshot as a base64 data URI directly in the HTML, s
 
 An intentional visual change leaves the check red — and if the check is required by branch protection, you need a way to accept it without weakening the gate.
 
-**The one-click path:** the report comment on the PR includes an "Approve all changes" checkbox. Tick it and the failed check reruns and passes automatically. Only users with write access can tick it (GitHub restricts editing the bot's comment), and it pins the current commit — pushing new commits renders it stale.
+**The checkbox path:** the report comment on the PR has a checkbox for each changed or removed screenshot, plus **Approve all**. Tick the screenshots you accept. Once every one is ticked, or Approve all is, the failed check reruns and passes automatically. While only some are ticked, an approval-status comment shows the count and nothing reruns. Only users with write access can tick boxes (GitHub restricts editing the bot's comment), and every box pins the current commit, so pushing new commits resets them. Suites with more than 50 changes get only the Approve all box.
 
 **The review path** uses `/vrt approve` commands:
 
@@ -129,7 +129,7 @@ jobs:
 
 **Multiple workflows in one repo** — if more than one workflow file runs this action (not just multiple steps in the same workflow), give each workflow its own `key` too; otherwise their baseline artifacts share a name and can cross-contaminate each other's comparisons.
 
-**Matrix builds / multiple apps in one repo** — give each invocation a distinct `key` so artifact names don't collide (`vrt-baseline-<key>`, `vrt-report-<key>`):
+**Matrix builds / multiple apps in one repo** — give each invocation a distinct `key` so artifact names don't collide (`vrt-baseline-<key>`, `vrt-report-<key>.html`):
 
 ```yaml
 - uses: fiestaboard/visual-regression-action@v1
@@ -188,7 +188,7 @@ permissions:
 ## FAQ
 
 **Why is my check red after an intentional visual change?**
-That's the design: a changed or removed screenshot fails the job by default (`fail-on-diff: true`) so the change gets a deliberate look before merge. To accept it, use the [approval flow](#approving-changes) — review in the report, post the generated `/vrt approve` command, and the check goes green. Once merged, the default branch rebuilds and publishes the new baseline automatically. If you'd rather never fail the check, run [report-only mode](#recipes) and branch on `has-changes` instead.
+That's the design: a changed or removed screenshot fails the job by default (`fail-on-diff: true`) so the change gets a deliberate look before merge. To accept it, use the [approval flow](#approving-changes): tick the boxes in the PR comment (or post a `/vrt approve` command) and the check goes green. Once merged, the default branch rebuilds and publishes the new baseline automatically. If you'd rather never fail the check, run [report-only mode](#recipes) and branch on `has-changes` instead.
 
 **What if the baseline expired or got deleted?**
 Nothing breaks — compares report everything as "new" and pass with a note until a baseline exists again. To republish one on demand, keep `workflow_dispatch:` in your workflow's triggers and hit "Run workflow" on your default branch (manual runs and `schedule` runs publish baselines in auto mode). Quiet repo? Add a monthly cron so the baseline never ages out of artifact retention:
@@ -207,6 +207,18 @@ Baseline and report artifacts count toward your repository's Actions storage quo
 
 **Which run's baseline gets used?**
 The newest non-expired `vrt-baseline[-<key>]` artifact whose producing run is on the base branch — regardless of whether that run ultimately succeeded or failed. This is a deliberate v1 simplification: the action does not walk run conclusions, it just picks the newest matching artifact. If a run can fail after uploading the baseline, move the baseline-upload step after your capture step succeeds.
+
+## Development
+
+```bash
+npm ci
+npm run dev:ui      # report UI (report-ui/, React + FiestaUI) with sample data
+npm run build:ui    # bundle the UI into src/generated/report-template.ts
+npm test
+npm run build       # bundle the action into dist/
+```
+
+The report UI is a React app built on [`@fiestaboard/ui`](https://www.npmjs.com/package/@fiestaboard/ui). `build:ui` bundles it into a single HTML template. At runtime the action injects that run's screenshots as JSON (`src/report-data.ts` defines the shape). Commit `src/generated/` and `dist/` after rebuilding; CI fails if either is stale.
 
 ## License
 

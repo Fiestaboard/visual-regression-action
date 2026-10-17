@@ -6,8 +6,13 @@ export function baselineArtifactName(key: string): string {
   return key ? `vrt-baseline-${key}` : 'vrt-baseline';
 }
 
+/**
+ * The report uploads un-zipped (one self-contained HTML file), and an
+ * un-zipped artifact takes its file's name — so this is both the artifact
+ * name and the file name, and GitHub serves it straight to the browser.
+ */
 export function reportArtifactName(key: string): string {
-  return key ? `vrt-report-${key}` : 'vrt-report';
+  return key ? `vrt-report-${key}.html` : 'vrt-report.html';
 }
 
 export interface BaselineRef {
@@ -82,13 +87,16 @@ export async function uploadDirectoryAsArtifact(name: string, dir: string, reten
   await client.uploadArtifact(name, files, dir, retentionDays ? { retentionDays } : {});
 }
 
-/** Uploads one file; returns the artifact id (for direct download links) when the API provides it. */
-export async function uploadFileAsArtifact(
-  name: string,
-  filePath: string,
-  retentionDays?: number
-): Promise<number | undefined> {
+/**
+ * Uploads one file without zipping it, so the artifact link opens the file
+ * itself in the browser. The artifact is named after the file. Returns the
+ * artifact id (for direct links) when the API provides it.
+ */
+export async function uploadFileUnzipped(filePath: string, retentionDays?: number): Promise<number | undefined> {
   const client = new DefaultArtifactClient();
-  const res = await client.uploadArtifact(name, [filePath], path.dirname(filePath), retentionDays ? { retentionDays } : {});
+  const res = await client.uploadArtifact(path.basename(filePath), [filePath], path.dirname(filePath), {
+    skipArchive: true,
+    ...(retentionDays ? { retentionDays } : {}),
+  });
   return res.id;
 }

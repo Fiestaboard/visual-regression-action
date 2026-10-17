@@ -7,15 +7,15 @@ import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
 import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
 import { upsertStickyComment, upsertMarkedComment, listPrComments, STATUS_MARKER } from './comment';
-import { parseApprovalCommands, applyApprovals, isApproveComment, checkboxPin } from './approvals';
-import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody } from './approve';
+import { parseApprovalCommands, applyApprovals, isApproveComment, boxTick } from './approvals';
+import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody, approvalProgressBody } from './approve';
 import {
   baselineArtifactName,
   reportArtifactName,
   findBaselineArtifact,
   downloadBaselineArtifact,
   uploadDirectoryAsArtifact,
-  uploadFileAsArtifact,
+  uploadFileUnzipped,
 } from './baseline';
 import { CompareSummary } from './types';
 
@@ -130,7 +130,7 @@ async function run(): Promise<void> {
   let reportPath = '';
   try {
     const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
-    reportPath = path.join(reportDir, 'index.html');
+    reportPath = path.join(reportDir, reportArtifactName(key));
     fs.writeFileSync(reportPath, generateHtmlReport(summary, meta));
   } catch (err) {
     core.warning(`Could not generate HTML report: ${err instanceof Error ? err.message : String(err)}`);
@@ -139,9 +139,9 @@ async function run(): Promise<void> {
 
   if (reportPath) {
     try {
-      const artifactId = await uploadFileAsArtifact(reportArtifactName(key), reportPath, retentionDays);
+      const artifactId = await uploadFileUnzipped(reportPath, retentionDays);
       if (artifactId) {
-        meta.reportDownloadUrl = `${meta.runUrl}/artifacts/${artifactId}`;
+        meta.reportUrl = `${meta.runUrl}/artifacts/${artifactId}`;
       }
     } catch (err) {
       core.warning(`Could not upload report artifact: ${err instanceof Error ? err.message : String(err)}`);
@@ -184,8 +184,8 @@ async function run(): Promise<void> {
     core.setFailed(
       `Visual changes detected: ${summary.changed} changed, ${summary.removed} removed (${approved} approved).` +
         missingNote +
-        ` Download the "${reportArtifactName(key)}" artifact to review. To accept intentional changes, post a ` +
-        `"/vrt approve" command (see the PR comment) covering every changed and removed screenshot. Merging updates the baselines.`
+        ` Open the "${reportArtifactName(key)}" artifact to review. To accept intentional changes, post a ` +
+        `"/vrt approve" command or tick the boxes in the PR comment, covering every changed and removed screenshot. Merging updates the baselines.`
     );
   } else if (failOnDiff && summary.hasChanges) {
     core.info('All visual changes are approved — passing.');
@@ -209,10 +209,11 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
   }
 
   const octokit = github.getOctokit(token);
+  const tick = boxTick(commentBody);
   const isBoxTick =
     ctx.payload.action === 'edited' &&
     ctx.payload.comment?.user?.login === 'github-actions[bot]' &&
-    checkboxPin(commentBody) !== null;
+    tick.kind !== 'none';
   const senderLogin: string = ctx.payload.sender?.login ?? '';
 
   if (isBoxTick) {
@@ -246,6 +247,12 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
       return;
     }
   }
+  if (isBoxTick && tick.kind === 'partial') {
+    // A rerun can only pass once every box is ticked; until then, acknowledge progress.
+    core.info(`${tick.ticked} of ${tick.total} approval boxes ticked — waiting for the rest before rerunning.`);
+    await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalProgressBody(senderLogin, tick.ticked, tick.total));
+    return;
+  }
   const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
   const runs = await findVrtRunsToRerun(octokit, owner, repo, pr.head.sha);
   const runUrls: string[] = [];
@@ -257,7 +264,7 @@ async function runApproveMode(token: string, owner: string, repo: string): Promi
   if (runs.length === 0) core.info('No failed visual-regression runs found for the PR head — nothing to rerun.');
   if (commentId) await reactToComment(octokit, owner, repo, commentId);
   const user: string = isBoxTick ? senderLogin : (ctx.payload.comment?.user?.login ?? 'someone');
-  const requested = isBoxTick ? `/vrt approve all@${checkboxPin(commentBody)}` : commentBody;
+  const requested = isBoxTick && tick.kind === 'complete' ? tick.command : commentBody;
   await upsertMarkedComment(octokit, owner, repo, prNumber, STATUS_MARKER, approvalReceivedBody(user, requested, runUrls));
 }
 
