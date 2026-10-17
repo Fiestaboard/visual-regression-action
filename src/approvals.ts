@@ -169,3 +169,17 @@ export function applyApprovals(
   }
   return approved;
 }
+
+/**
+ * Failure text for when the PR comments could not be read at all. Without
+ * this, the check fails with the ordinary "Visual changes detected … (0
+ * approved)" message, which reads as if nobody had approved — when in fact
+ * the approvals were never evaluated.
+ */
+export function approvalsUnreadableMessage(error: string, unapproved: number): string {
+  return (
+    `Approvals could not be evaluated: reading the PR comments failed (${error}). ` +
+    `${unapproved} changed/removed screenshot(s) are therefore treated as unapproved, ` +
+    `even if boxes are ticked or a "/vrt approve" command has been posted. Re-run this job to try again.`
+  );
+}

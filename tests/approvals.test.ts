@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseApprovalCommands, applyApprovals, shortHash, isApproveComment, checkboxItems, encodeItemMarker, boxTick } from '../src/approvals';
+import { parseApprovalCommands, applyApprovals, shortHash, isApproveComment, checkboxItems, encodeItemMarker, boxTick, approvalsUnreadableMessage } from '../src/approvals';
 import { CompareSummary } from '../src/types';
 
 const OK = 'COLLABORATOR';
@@ -236,5 +236,17 @@ describe('applyApprovals', () => {
     const s = summary();
     const a = parseApprovalCommands([comment('/vrt approve all', OK, '2026-09-05T12:00:00Z')]);
     expect(applyApprovals(s, a, 'deadbeefcafe00')).toBe(0);
+  });
+});
+
+describe('approvalsUnreadableMessage', () => {
+  it('says approvals were not evaluated, not that none were posted', () => {
+    const msg = approvalsUnreadableMessage('other side closed', 17);
+    expect(msg).toMatch(/^Approvals could not be evaluated/);
+    expect(msg).toContain('other side closed');
+    expect(msg).toContain('17 changed/removed');
+    expect(msg).toContain('boxes are ticked');
+    expect(msg).toMatch(/Re-run this job/);
+    expect(msg).not.toMatch(/Visual changes detected/);
   });
 });
