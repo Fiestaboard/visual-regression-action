@@ -73,6 +73,18 @@ export function approvalReceivedBody(user: string, commandBody: string, runUrls:
   return lines.join('\n');
 }
 
+/** Status shown while per-screenshot boxes are only partly ticked (no rerun yet). */
+export function approvalProgressBody(user: string, ticked: number, total: number): string {
+  const left = total - ticked;
+  return [
+    '### Approval in progress',
+    '',
+    `☑️ @${user} has ticked **${ticked} of ${total}** screenshots in the report comment above.`,
+    '',
+    `Tick the remaining ${left} (or **Approve all**) and the visual check reruns automatically.`,
+  ].join('\n');
+}
+
 /** Best-effort 👀 reaction on the approval comment so the commenter sees it landed. */
 export async function reactToComment(
   octokit: ApproveOctokit,

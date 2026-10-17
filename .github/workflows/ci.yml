@@ -18,14 +18,15 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run build:ui
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Verify dist is up to date
+      - name: Verify dist and the embedded report template are up to date
         run: |
-          if ! git diff --quiet dist/; then
-            echo "::error::dist/ is stale. Run 'npm run build' and commit the result."
-            git diff --stat dist/
+          if ! git diff --quiet dist/ src/generated/; then
+            echo "::error::dist/ or src/generated/ is stale. Run 'npm run build:ui && npm run build' and commit the result."
+            git diff --stat dist/ src/generated/
             exit 1
           fi
 

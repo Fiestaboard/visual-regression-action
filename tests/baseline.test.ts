@@ -5,8 +5,8 @@ describe('artifact names', () => {
   it('suffixes only when a key is given', () => {
     expect(baselineArtifactName('')).toBe('vrt-baseline');
     expect(baselineArtifactName('web')).toBe('vrt-baseline-web');
-    expect(reportArtifactName('')).toBe('vrt-report');
-    expect(reportArtifactName('web')).toBe('vrt-report-web');
+    expect(reportArtifactName('')).toBe('vrt-report.html');
+    expect(reportArtifactName('web')).toBe('vrt-report-web.html');
   });
 });
 
