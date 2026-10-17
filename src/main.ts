@@ -111,7 +111,7 @@ async function run(): Promise<void> {
         }
       }
       approved = applyApprovals(summary, approvals, headSha, headCommittedAt);
-      if (approved > 0) core.info(`${approved} visual change(s) approved via /vrt approve comments.`);
+      if (approved > 0) core.info(`${approved} visual change(s) approved via PR checkboxes or /vrt approve comments.`);
     } catch (err) {
       core.warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
     }

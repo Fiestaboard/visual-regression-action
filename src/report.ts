@@ -70,7 +70,7 @@ export function generateMarkdownSummary(summary: CompareSummary, meta: ReportMet
       ''
     );
     if (approvedCount > 0 && approvedCount === needingApproval) {
-      lines.push('✅ **All visual changes approved** via `/vrt approve`.', '');
+      lines.push('✅ **All visual changes approved** on this PR.', '');
     } else if (approvedCount > 0) {
       const missing = summary.results
         .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)

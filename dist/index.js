@@ -90037,7 +90037,7 @@ function generateMarkdownSummary(summary, meta) {
         const approvedNote = approvedCount > 0 ? ` · ${approvedCount} approved` : '';
         lines.push(`**${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged${approvedNote}**`, '');
         if (approvedCount > 0 && approvedCount === needingApproval) {
-            lines.push('✅ **All visual changes approved** via `/vrt approve`.', '');
+            lines.push('✅ **All visual changes approved** on this PR.', '');
         }
         else if (approvedCount > 0) {
             const missing = summary.results
@@ -143079,7 +143079,7 @@ async function run() {
             }
             approved = applyApprovals(summary, approvals, headSha, headCommittedAt);
             if (approved > 0)
-                info(`${approved} visual change(s) approved via /vrt approve comments.`);
+                info(`${approved} visual change(s) approved via PR checkboxes or /vrt approve comments.`);
         }
         catch (err) {
             warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
