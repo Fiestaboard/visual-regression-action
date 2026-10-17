@@ -1,9 +1,9 @@
 {
   "name": "visual-regression-action",
-  "version": "1.9.1",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Visual regression testing for GitHub Actions with artifact-based baselines \u2014 no screenshots in git",
+  "description": "Visual regression testing for GitHub Actions with artifact-based baselines — no screenshots in git",
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build src/main.ts -o dist --license licenses.txt",

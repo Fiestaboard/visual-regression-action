@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # ... capture screenshots into ./screenshots with your tool of choice ...
-      - uses: fiestaboard/visual-regression-action@v1
+      - uses: fiestaboard/visual-regression-action@v2
         with:
           screenshots-dir: ./screenshots
 ```
@@ -120,7 +120,7 @@ jobs:
       issues: write         # rocket reaction on the approval comment
       pull-requests: write  # (reactions on PR comments use this scope too)
     steps:
-      - uses: fiestaboard/visual-regression-action@v1
+      - uses: fiestaboard/visual-regression-action@v2
         with:
           mode: approve
 ```
@@ -132,7 +132,7 @@ jobs:
 **Matrix builds / multiple apps in one repo** — give each invocation a distinct `key` so artifact names don't collide (`vrt-baseline-<key>`, `vrt-report-<key>.html`):
 
 ```yaml
-- uses: fiestaboard/visual-regression-action@v1
+- uses: fiestaboard/visual-regression-action@v2
   with:
     screenshots-dir: ./screenshots
     key: ${{ matrix.browser }}
@@ -141,7 +141,7 @@ jobs:
 **Report-only mode** — never fail the check, but still branch on whether anything changed:
 
 ```yaml
-- uses: fiestaboard/visual-regression-action@v1
+- uses: fiestaboard/visual-regression-action@v2
   id: vrt
   with:
     screenshots-dir: ./screenshots
@@ -153,7 +153,7 @@ jobs:
 **Comparing against a non-default branch** — override which branch's baseline to diff against:
 
 ```yaml
-- uses: fiestaboard/visual-regression-action@v1
+- uses: fiestaboard/visual-regression-action@v2
   with:
     screenshots-dir: ./screenshots
     baseline-branch: release
@@ -162,11 +162,11 @@ jobs:
 **Monorepos** — run the action twice with different `key` and `screenshots-dir` values, one per app:
 
 ```yaml
-- uses: fiestaboard/visual-regression-action@v1
+- uses: fiestaboard/visual-regression-action@v2
   with:
     screenshots-dir: ./apps/web/screenshots
     key: web
-- uses: fiestaboard/visual-regression-action@v1
+- uses: fiestaboard/visual-regression-action@v2
   with:
     screenshots-dir: ./apps/admin/screenshots
     key: admin
@@ -207,6 +207,14 @@ Baseline and report artifacts count toward your repository's Actions storage quo
 
 **Which run's baseline gets used?**
 The newest non-expired `vrt-baseline[-<key>]` artifact whose producing run is on the base branch — regardless of whether that run ultimately succeeded or failed. This is a deliberate v1 simplification: the action does not walk run conclusions, it just picks the newest matching artifact. If a run can fail after uploading the baseline, move the baseline-upload step after your capture step succeeds.
+
+## Upgrading from v1
+
+v2 changes nothing in your workflow inputs. Bump `@v1` to `@v2`, and check one thing:
+
+- **The report artifact is now `vrt-report[-<key>].html`** (it was `vrt-report[-<key>]`), uploaded un-zipped so it opens in the browser. The `report-path` output's file name changes to match. Update any step that downloads the report artifact by name or reads `report-path` expecting `index.html`.
+
+Approval workflows keep working as they are: the existing `if:` condition already matches the new per-screenshot checkboxes.
 
 ## Development
 

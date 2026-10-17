@@ -60,6 +60,6 @@ jobs:
         run: node scripts/capture.js
       # --- end capture ---
 
-      - uses: fiestaboard/visual-regression-action@v1
+      - uses: fiestaboard/visual-regression-action@v2
         with:
           screenshots-dir: ./screenshots
