@@ -19,9 +19,9 @@ const SLATE = [226, 232, 240, 255];
 // Each entry becomes demo-screens/<name>. Tweak a value in a PR and the
 // visual-demo workflow will flag exactly that screen as changed.
 const SCREENS = {
-  'home.png': { header: BLUE, rows: 4, accent: ORANGE },
-  'settings.png': { header: BLUE, rows: 5, accent: GRAY },
-  'sign-up.png': { header: GREEN, rows: 2, accent: BLUE },
+  'home.png': { header: BLUE, rows: 4, accent: GREEN },
+  'settings.png': { header: BLUE, rows: 6, accent: GRAY },
+  'profile.png': { header: BLUE, rows: 3, accent: ORANGE },
 };
 
 function rect(img, x, y, w, h, [r, g, b, a]) {
