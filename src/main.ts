@@ -7,7 +7,7 @@ import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
 import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
 import { upsertStickyComment, upsertMarkedComment, listPrComments, STATUS_MARKER } from './comment';
-import { parseApprovalCommands, applyApprovals, isApproveComment, boxTick } from './approvals';
+import { parseApprovalCommands, applyApprovals, isApproveComment, boxTick, approvalsUnreadableMessage } from './approvals';
 import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody, approvalProgressBody } from './approve';
 import {
   baselineArtifactName,
@@ -95,6 +95,7 @@ async function run(): Promise<void> {
   const prNumber = ctx.payload.pull_request?.number;
   const headSha = ctx.payload.pull_request?.head?.sha ?? ctx.sha;
   let approved = 0;
+  let approvalsReadError: string | undefined;
   if (prNumber && summary.hasChanges) {
     try {
       const comments = await listPrComments(octokit, owner, repo, prNumber);
@@ -113,7 +114,8 @@ async function run(): Promise<void> {
       approved = applyApprovals(summary, approvals, headSha, headCommittedAt);
       if (approved > 0) core.info(`${approved} visual change(s) approved via PR checkboxes or /vrt approve comments.`);
     } catch (err) {
-      core.warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
+      approvalsReadError = err instanceof Error ? err.message : String(err);
+      core.warning(`Could not read PR comments for approvals: ${approvalsReadError}`);
     }
   }
 
@@ -176,7 +178,9 @@ async function run(): Promise<void> {
   );
 
   const unapproved = summary.changed + summary.removed - approved;
-  if (failOnDiff && unapproved > 0) {
+  if (failOnDiff && unapproved > 0 && approvalsReadError !== undefined) {
+    core.setFailed(approvalsUnreadableMessage(approvalsReadError, unapproved));
+  } else if (failOnDiff && unapproved > 0) {
     const missing = summary.results
       .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
       .map((r) => r.name);

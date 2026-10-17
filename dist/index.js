@@ -89993,6 +89993,17 @@ function applyApprovals(summary, approvals, headSha, headCommittedAt) {
     }
     return approved;
 }
+/**
+ * Failure text for when the PR comments could not be read at all. Without
+ * this, the check fails with the ordinary "Visual changes detected … (0
+ * approved)" message, which reads as if nobody had approved — when in fact
+ * the approvals were never evaluated.
+ */
+function approvalsUnreadableMessage(error, unapproved) {
+    return (`Approvals could not be evaluated: reading the PR comments failed (${error}). ` +
+        `${unapproved} changed/removed screenshot(s) are therefore treated as unapproved, ` +
+        `even if boxes are ticked or a "/vrt approve" command has been posted. Re-run this job to try again.`);
+}
 
 ;// CONCATENATED MODULE: ./src/report.ts
 
@@ -143061,6 +143072,7 @@ async function run() {
     const prNumber = ctx.payload.pull_request?.number;
     const headSha = ctx.payload.pull_request?.head?.sha ?? ctx.sha;
     let approved = 0;
+    let approvalsReadError;
     if (prNumber && summary.hasChanges) {
         try {
             const comments = await listPrComments(octokit, owner, repo, prNumber);
@@ -143082,7 +143094,8 @@ async function run() {
                 info(`${approved} visual change(s) approved via PR checkboxes or /vrt approve comments.`);
         }
         catch (err) {
-            warning(`Could not read PR comments for approvals: ${err instanceof Error ? err.message : String(err)}`);
+            approvalsReadError = err instanceof Error ? err.message : String(err);
+            warning(`Could not read PR comments for approvals: ${approvalsReadError}`);
         }
     }
     const meta = {
@@ -143138,7 +143151,10 @@ async function run() {
         `${summary.changed} changed, ${summary.added} added, ${summary.removed} removed, ` +
         `${summary.unchanged} unchanged, ${approved} approved.`);
     const unapproved = summary.changed + summary.removed - approved;
-    if (failOnDiff && unapproved > 0) {
+    if (failOnDiff && unapproved > 0 && approvalsReadError !== undefined) {
+        setFailed(approvalsUnreadableMessage(approvalsReadError, unapproved));
+    }
+    else if (failOnDiff && unapproved > 0) {
         const missing = summary.results
             .filter((r) => (r.status === 'changed' || r.status === 'removed') && !r.approved)
             .map((r) => r.name);
