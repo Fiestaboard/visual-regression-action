@@ -8,9 +8,12 @@ export interface ScreenshotResult {
   diffRatio: number;
   baselinePng?: Buffer;
   currentPng?: Buffer;
-  diffPng?: Buffer;
-  /** Transparent PNG containing only the changed pixels (overlay view). */
-  diffMaskPng?: Buffer;
+  /**
+   * Changed only, when the change is local: the band of rows the report shows
+   * instead of the whole page, cut from baseline and current alike. The full
+   * PNGs above are still what approvals hash.
+   */
+  crop?: { top: number; height: number; baselinePng: Buffer; currentPng: Buffer };
   /** True when a `/vrt approve` PR comment pinned this exact content. */
   approved?: boolean;
 }

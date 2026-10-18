@@ -78,7 +78,13 @@ Results surface in three places:
 2. **`$GITHUB_STEP_SUMMARY`** — the same summary rendered on the workflow run page.
 3. **`vrt-report[-<key>].html` artifact**: one self-contained HTML file, uploaded un-zipped so the link in the PR comment opens it directly in the browser. There's nothing to download or unzip. The reviewer is built with [FiestaUI](https://github.com/Fiestaboard/FiestaUI), the FiestaBoard design system. Each changed screenshot gets a large comparison stage with three views: **Swipe** (drag a divider between baseline and current), **Overlay** (the current screenshot with detected changes highlighted in pink), and **Side-by-side** (baseline / current / diff thumbnails). A **fullscreen reviewer** steps through every change: `←`/`→` to move between screenshots, `S`/`O`/`D` to switch views, scroll to zoom, drag to pan, `Esc` to close. It makes no external requests.
 
-The report inlines every screenshot as a base64 data URI directly in the HTML, so very large suites (many or very large screenshots) produce a correspondingly large artifact — keep screenshots reasonably sized (e.g. viewport-cropped rather than full-page where possible) if this becomes a concern.
+Large reports stay quick to open:
+
+- **The report streams.** The reviewer shows up as soon as the first few hundred kilobytes arrive. Screenshots fill in while the rest downloads, changed ones first, and each image is decoded only when its card scrolls into view.
+- **No diff images are shipped.** The overlay and diff views are computed in your browser from baseline and current, using the same `threshold` as the compare.
+- **Local changes are cropped.** When a change covers only part of a tall screenshot, the report carries just that band (plus 200 px above and below) and says which rows it shows. A page whose size changed always ships whole.
+
+Screenshots are embedded as base64, so a run with many changed or added full-page captures still produces a large file. Viewport-sized captures keep it small.
 
 ## Approving changes
 

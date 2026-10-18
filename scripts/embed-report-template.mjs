@@ -1,17 +1,38 @@
 // Embeds the built report UI (report-ui/dist/index.html — one self-contained
 // file) into src/generated/report-template.ts so ncc bundles it into the action.
+//
+// It also moves the app's script. Vite inlines it into <head> as a module,
+// and a module script waits for the whole document to parse — which, for a
+// report of hundreds of megabytes of images, means waiting for the whole
+// download. Placed after the metadata block and marked `async`, it runs as
+// soon as it arrives and draws the reviewer while the images still stream in.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
-const PLACEHOLDER = '__VRT_DATA__';
+const DATA = '__VRT_DATA__';
+const IMAGES = '<!--__VRT_IMAGES__-->';
 const src = new URL('../report-ui/dist/index.html', import.meta.url);
 const out = new URL('../src/generated/report-template.ts', import.meta.url);
 
-const html = readFileSync(src, 'utf8');
-const hits = html.split(PLACEHOLDER).length - 1;
-if (hits !== 1) {
-  console.error(`expected exactly one ${PLACEHOLDER} in the built report, found ${hits}`);
+const fail = (msg) => {
+  console.error(msg);
   process.exit(1);
+};
+const count = (s, needle) => s.split(needle).length - 1;
+
+let html = readFileSync(src, 'utf8');
+for (const marker of [DATA, IMAGES]) {
+  const n = count(html, marker);
+  if (n !== 1) fail(`expected exactly one ${marker} in the built report, found ${n}`);
 }
+
+const scripts = [...html.matchAll(/<script type="module"[^>]*>[\s\S]*?<\/script>/g)];
+if (scripts.length !== 1) fail(`expected exactly one inlined module script, found ${scripts.length}`);
+const [tag] = scripts[0];
+const body = tag.replace(/^<script type="module"[^>]*>/, '');
+html = html.replace(tag, () => '');
+html = html.replace(IMAGES, () => `<script type="module" async>${body}\n${IMAGES}`);
+if (html.indexOf(DATA) > html.indexOf('<script type="module" async>')) fail('the app script must follow the metadata block');
+
 mkdirSync(new URL('.', out), { recursive: true });
 writeFileSync(
   out,

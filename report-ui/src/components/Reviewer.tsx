@@ -4,7 +4,9 @@ import * as React from 'react';
 import type { ReportItem } from '../../../src/report-data';
 import { isVotable, pct } from '../review';
 import { StatusBadge, VoteButtons } from './ScreenshotCard';
-import { BlinkView, Frame, OverlayView, SideBySideView, SwipeScrub, SwipeView, VIEW_KEY, VIEW_LABEL, VIEW_MODES, type ViewMode } from './views';
+import { BlinkView, Frame, OverlayView, Pending, SideBySideView, SwipeScrub, SwipeView, VIEW_KEY, VIEW_LABEL, VIEW_MODES, type ViewMode } from './views';
+import { useItemImages } from '../use-images';
+import { imageUrl } from '../images';
 
 export type ZoomState = 'fit' | 'actual' | 'free';
 
@@ -27,23 +29,21 @@ interface Props {
   handleRef: React.Ref<ReviewerHandle>;
 }
 
-function useNaturalSize(src?: string): { w: number; h: number } {
-  const [size, setSize] = React.useState({ w: 0, h: 0 });
-  React.useEffect(() => {
-    if (!src) return setSize({ w: 0, h: 0 });
-    const img = new Image();
-    img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
-    img.src = src;
-  }, [src]);
-  return size;
-}
-
 export function Reviewer(props: Props) {
   const { items, index, mode, verdictOf, onIndex, onMode, onVote, onNextUnreviewed, onClose, bottomInset, handleRef } = props;
   const item = items[index];
   const changed = item.status === 'changed';
+  // Sizes come with the metadata, so the stage is laid out before the pixels arrive.
   const ref = changed ? item.current : item.status === 'added' ? item.current : item.baseline;
-  const nat = useNaturalSize(ref);
+  const nat = { w: ref?.width ?? 0, h: ref?.height ?? 0 };
+  const imgs = useItemImages(item, { enabled: true, withDiff: changed && (mode === 'overlay' || mode === 'sbs') });
+
+  // Warm the neighbours so stepping with ←/→ doesn't wait on decoding.
+  React.useEffect(() => {
+    for (const n of [items[index + 1], items[index - 1]]) {
+      for (const r of [n?.baseline, n?.current]) if (r) imageUrl(r).catch(() => {});
+    }
+  }, [items, index]);
 
   const wrap = React.useRef<HTMLDivElement>(null);
   const [zoom, setZoomState] = React.useState<ZoomState>('fit');
@@ -135,21 +135,24 @@ export function Reviewer(props: Props) {
   const stat = changed ? `${pct(item.diffRatio)} changed` : item.status === 'added' ? 'new screenshot' : 'removed screenshot';
 
   let stage: React.ReactNode;
+  const size = ref ? { width: ref.width, height: ref.height } : undefined;
   if (!changed) {
-    const src = item.status === 'added' ? item.current : item.baseline;
-    stage = (
+    const src = item.status === 'added' ? imgs.current : imgs.baseline;
+    stage = src ? (
       <Frame style={naturalWidth ? { width: naturalWidth } : undefined}>
         <img className="block w-full" src={src} alt={item.status === 'added' ? 'current (new)' : 'baseline (removed)'} draggable={false} />
       </Frame>
+    ) : (
+      <Pending size={size} naturalWidth={naturalWidth} error={!!imgs.error} label={imgs.error ?? 'Loading screenshot…'} />
     );
   } else if (mode === 'overlay') {
-    stage = <OverlayView current={item.current} mask={item.mask} opacity={100} naturalWidth={naturalWidth} />;
+    stage = <OverlayView current={imgs.current} mask={imgs.mask} opacity={100} naturalWidth={naturalWidth} size={size} diffError={imgs.diffError} />;
   } else if (mode === 'blink') {
-    stage = <BlinkView baseline={item.baseline} current={item.current} naturalWidth={naturalWidth} />;
+    stage = <BlinkView baseline={imgs.baseline} current={imgs.current} naturalWidth={naturalWidth} size={size} />;
   } else if (mode === 'sbs') {
-    stage = <SideBySideView baseline={item.baseline} current={item.current} diff={item.diff} large />;
+    stage = <SideBySideView baseline={imgs.baseline} current={imgs.current} diff={imgs.diff} large size={size} diffError={imgs.diffError} />;
   } else {
-    stage = <SwipeView baseline={item.baseline} current={item.current} split={split} onSplit={setSplit} naturalWidth={naturalWidth} />;
+    stage = <SwipeView baseline={imgs.baseline} current={imgs.current} split={split} onSplit={setSplit} naturalWidth={naturalWidth} size={size} />;
   }
 
   return (
@@ -167,6 +170,11 @@ export function Reviewer(props: Props) {
         <StatusBadge status={item.status} />
         <span className="min-w-0 font-mono text-sm font-medium break-all">{item.name}</span>
         <span className={cn('font-mono text-sm', changed ? 'text-warning' : 'text-muted-foreground')}>{stat}</span>
+        {item.crop ? (
+          <span className="font-mono text-xs text-muted-foreground" title="The change is local, so the report carries only this part of the page.">
+            rows {item.crop.top.toLocaleString()}–{(item.crop.top + item.crop.height).toLocaleString()} of {item.crop.fullHeight.toLocaleString()}
+          </span>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <VoteButtons item={item} verdict={verdictOf(item)} onVote={onVote} labels />
           {isVotable(item) ? (

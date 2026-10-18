@@ -51,6 +51,44 @@ export function Frame({
 
 const imgCls = 'block w-full';
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/**
+ * Stands in for an image that hasn't arrived (or a diff still computing), at
+ * the image's own aspect ratio, so the page doesn't jump when it lands.
+ */
+export function Pending({ size, label, naturalWidth, error }: { size?: Size; label: string; naturalWidth?: number; error?: boolean }) {
+  return (
+    <Frame
+      className="flex items-center justify-center bg-muted/40"
+      style={{
+        ...(naturalWidth ? { width: naturalWidth } : {}),
+        aspectRatio: size ? `${size.width} / ${size.height}` : '16 / 9',
+        maxHeight: naturalWidth ? undefined : '70vh',
+      }}
+      data-pending={error ? 'error' : 'loading'}
+    >
+      <span className={cn('px-3 text-center font-sans text-xs leading-normal', error ? 'text-destructive' : 'animate-pulse text-muted-foreground')}>
+        {label}
+      </span>
+    </Frame>
+  );
+}
+
+/** Says when a report shows only the band of a page around its change. */
+export function CropNote({ crop, className }: { crop?: { top: number; height: number; fullHeight: number }; className?: string }) {
+  if (!crop) return null;
+  return (
+    <p className={cn('text-xs text-muted-foreground', className)}>
+      Showing rows {crop.top.toLocaleString()}–{(crop.top + crop.height).toLocaleString()} of {crop.fullHeight.toLocaleString()}: the
+      change is local, so the report carries only this part of the page.
+    </p>
+  );
+}
+
 /** Width for a frame: natural pixels in the reviewer (so 100% zoom is honest), fluid in cards. */
 function frameStyle(naturalWidth?: number): React.CSSProperties | undefined {
   return naturalWidth ? { width: naturalWidth } : undefined;
@@ -62,11 +100,13 @@ interface SwipeProps {
   split: number;
   onSplit: (v: number) => void;
   naturalWidth?: number;
+  size?: Size;
 }
 
 /** Baseline LEFT of the divider, current RIGHT. Drag anywhere on the image to move it. */
-export function SwipeView({ baseline, current, split, onSplit, naturalWidth }: SwipeProps) {
+export function SwipeView({ baseline, current, split, onSplit, naturalWidth, size }: SwipeProps) {
   const ref = React.useRef<HTMLDivElement>(null);
+  if (!baseline || !current) return <Pending size={size} naturalWidth={naturalWidth} label="Loading screenshots…" />;
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = ref.current;
     if (!el) return;
@@ -134,11 +174,15 @@ interface OverlayProps {
   mask?: string;
   opacity: number;
   naturalWidth?: number;
+  size?: Size;
+  diffError?: string;
 }
 
 /** Current screenshot with the changed pixels painted over it. Press and hold to peek underneath. */
-export function OverlayView({ current, mask, opacity, naturalWidth }: OverlayProps) {
+export function OverlayView({ current, mask, opacity, naturalWidth, size, diffError }: OverlayProps) {
   const [peek, setPeek] = React.useState(false);
+  if (diffError) return <Pending size={size} naturalWidth={naturalWidth} error label={`Couldn't compute the overlay: ${diffError}`} />;
+  if (!current || !mask) return <Pending size={size} naturalWidth={naturalWidth} label={current ? 'Finding the changed pixels…' : 'Loading screenshot…'} />;
   return (
     <Frame
       style={frameStyle(naturalWidth)}
@@ -149,21 +193,19 @@ export function OverlayView({ current, mask, opacity, naturalWidth }: OverlayPro
       data-view="overlay"
     >
       <img className={imgCls} src={current} alt="current" draggable={false} />
-      {mask ? (
-        <img
-          className="absolute top-0 left-0 block w-full"
-          style={{ opacity: peek ? 0 : opacity / 100 }}
-          src={mask}
-          alt="changed pixels highlighted"
-          draggable={false}
-        />
-      ) : null}
+      <img
+        className="absolute top-0 left-0 block w-full"
+        style={{ opacity: peek ? 0 : opacity / 100 }}
+        src={mask}
+        alt="changed pixels highlighted"
+        draggable={false}
+      />
     </Frame>
   );
 }
 
 /** Alternates baseline ↔ current every 900ms (unless reduced motion); click flips by hand. */
-export function BlinkView({ baseline, current, naturalWidth }: { baseline?: string; current?: string; naturalWidth?: number }) {
+export function BlinkView({ baseline, current, naturalWidth, size }: { baseline?: string; current?: string; naturalWidth?: number; size?: Size }) {
   const reduced = usePrefersReducedMotion();
   const [showBase, setShowBase] = React.useState(false);
   React.useEffect(() => {
@@ -171,6 +213,7 @@ export function BlinkView({ baseline, current, naturalWidth }: { baseline?: stri
     const t = setInterval(() => setShowBase((s) => !s), 900);
     return () => clearInterval(t);
   }, [reduced]);
+  if (!baseline || !current) return <Pending size={size} naturalWidth={naturalWidth} label="Loading screenshots…" />;
   return (
     <Frame
       className="cursor-pointer"
@@ -193,24 +236,58 @@ export function BlinkView({ baseline, current, naturalWidth }: { baseline?: stri
   );
 }
 
-export function Figure({ caption, src, alt, className, imgClassName }: { caption: string; src?: string; alt: string; className?: string; imgClassName?: string }) {
+interface FigureProps {
+  caption: string;
+  src?: string;
+  alt: string;
+  className?: string;
+  imgClassName?: string;
+  size?: Size;
+  pendingLabel?: string;
+  error?: string;
+}
+
+export function Figure({ caption, src, alt, className, imgClassName, size, pendingLabel = 'Loading screenshot…', error }: FigureProps) {
   return (
     <figure className={cn('m-0 min-w-0', className)}>
       <figcaption className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">{caption}</figcaption>
-      <Frame>
-        <img className={cn(imgCls, imgClassName)} src={src} alt={alt} draggable={false} />
-      </Frame>
+      {error ? (
+        <Pending size={size} error label={error} />
+      ) : src ? (
+        <Frame>
+          <img className={cn(imgCls, imgClassName)} src={src} alt={alt} draggable={false} />
+        </Frame>
+      ) : (
+        <Pending size={size} label={pendingLabel} />
+      )}
     </figure>
   );
 }
 
-export function SideBySideView({ baseline, current, diff, large }: { baseline?: string; current?: string; diff?: string; large?: boolean }) {
+interface SideBySideProps {
+  baseline?: string;
+  current?: string;
+  diff?: string;
+  large?: boolean;
+  size?: Size;
+  diffError?: string;
+}
+
+export function SideBySideView({ baseline, current, diff, large, size, diffError }: SideBySideProps) {
   const fig = large ? 'w-[30vw] flex-none' : 'flex-1 basis-56';
   return (
     <div className={cn('flex gap-3', large ? 'flex-nowrap' : 'flex-wrap')} data-view="sbs">
-      <Figure className={fig} caption="Baseline" src={baseline} alt="baseline" />
-      <Figure className={fig} caption="Current" src={current} alt="current" />
-      <Figure className={fig} caption="Diff" src={diff} alt="diff" />
+      <Figure className={fig} caption="Baseline" src={baseline} alt="baseline" size={size} />
+      <Figure className={fig} caption="Current" src={current} alt="current" size={size} />
+      <Figure
+        className={fig}
+        caption="Diff"
+        src={diff}
+        alt="diff"
+        size={size}
+        pendingLabel="Computing the diff…"
+        error={diffError ? `Couldn't compute the diff: ${diffError}` : undefined}
+      />
     </div>
   );
 }

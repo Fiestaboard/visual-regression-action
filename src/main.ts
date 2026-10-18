@@ -5,7 +5,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { resolveMode } from './mode';
 import { compareDirectories } from './diff';
-import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
+import { writeHtmlReport, generateMarkdownSummary, approvalOutcomeBody, ReportMeta } from './report';
 import { upsertStickyComment, upsertMarkedComment, listPrComments, STATUS_MARKER } from './comment';
 import { parseApprovalCommands, applyApprovals, isApproveComment, boxTick, approvalsUnreadableMessage } from './approvals';
 import { findVrtRunsToRerun, rerunFailedJobs, reactToComment, approvalReceivedBody, approvalProgressBody } from './approve';
@@ -127,13 +127,15 @@ async function run(): Promise<void> {
     missingBaseline: !ref,
     reportArtifactName: reportArtifactName(key),
     prUrl: prNumber ? `https://github.com/${owner}/${repo}/pull/${prNumber}` : undefined,
+    threshold,
   };
 
   let reportPath = '';
   try {
     const reportDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'vrt-report-'));
     reportPath = path.join(reportDir, reportArtifactName(key));
-    fs.writeFileSync(reportPath, generateHtmlReport(summary, meta));
+    const bytes = writeHtmlReport(reportPath, summary, meta);
+    core.info(`Report: ${(bytes / 1048576).toFixed(1)} MB`);
   } catch (err) {
     core.warning(`Could not generate HTML report: ${err instanceof Error ? err.message : String(err)}`);
     reportPath = '';
