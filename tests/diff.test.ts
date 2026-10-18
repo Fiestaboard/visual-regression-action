@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PNG } from 'pngjs';
-import { compareDirectories, listPngs } from '../src/diff';
+import { compareDirectories, listPngs, cropBand, CROP_MARGIN } from '../src/diff';
 import { makePng, makePngWithRect } from './helpers/png';
 
 function tmpDirs(): { base: string; curr: string } {
@@ -49,7 +49,7 @@ describe('compareDirectories', () => {
     expect(s.results[0].diffRatio).toBe(0);
   });
 
-  it('a differing region marks the image changed with a diff PNG and ratio', () => {
+  it('a differing region marks the image changed with its ratio and both PNGs', () => {
     const { base, curr } = tmpDirs();
     write(base, 'a.png', makePng(100, 100, WHITE));
     write(curr, 'a.png', makePngWithRect(100, 100, WHITE, { x: 0, y: 0, w: 10, h: 10, color: RED }));
@@ -58,30 +58,49 @@ describe('compareDirectories', () => {
     expect(s.hasChanges).toBe(true);
     const r = s.results[0];
     expect(r.diffRatio).toBeCloseTo(0.01, 3);
-    expect(r.diffPng).toBeInstanceOf(Buffer);
     expect(r.baselinePng).toBeInstanceOf(Buffer);
     expect(r.currentPng).toBeInstanceOf(Buffer);
   });
 
-  it('changed results carry a transparent diff mask marking only changed pixels', () => {
+  it('a local change on a tall page ships only the band around it, cut from both images', () => {
     const { base, curr } = tmpDirs();
-    write(base, 'a.png', makePng(100, 100, WHITE));
-    write(curr, 'a.png', makePngWithRect(100, 100, WHITE, { x: 10, y: 10, w: 10, h: 10, color: RED }));
-    const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 });
-    const r = s.results[0];
-    expect(r.diffMaskPng).toBeInstanceOf(Buffer);
-    const mask = PNG.sync.read(r.diffMaskPng!);
-    const alphaAt = (x: number, y: number) => mask.data[(y * 100 + x) * 4 + 3];
-    expect(alphaAt(0, 0)).toBe(0); // unchanged pixel: fully transparent
-    expect(alphaAt(15, 15)).toBeGreaterThan(0); // changed pixel: visible
+    write(base, 'tall.png', makePng(40, 2000, WHITE));
+    write(curr, 'tall.png', makePngWithRect(40, 2000, WHITE, { x: 0, y: 1000, w: 40, h: 10, color: RED }));
+    const r = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 }).results[0];
+    expect(r.status).toBe('changed');
+    expect(r.crop).toMatchObject({ top: 1000 - CROP_MARGIN, height: 10 + 2 * CROP_MARGIN });
+    for (const png of [r.crop!.baselinePng, r.crop!.currentPng]) {
+      const img = PNG.sync.read(png);
+      expect([img.width, img.height]).toEqual([40, 10 + 2 * CROP_MARGIN]);
+    }
+    // The band's rows really are the changed rows of the current image.
+    const cur = PNG.sync.read(r.crop!.currentPng);
+    const red = (y: number) => cur.data[(y * 40) * 4 + 1] === 0;
+    expect(red(CROP_MARGIN)).toBe(true);
+    expect(red(CROP_MARGIN - 1)).toBe(false);
+    // Approvals still hash the full screenshots.
+    expect(PNG.sync.read(r.currentPng!).height).toBe(2000);
   });
 
-  it('unchanged results carry no diff mask', () => {
+  it('a change spread over the page, or a page that changed size, ships whole', () => {
+    const { base, curr } = tmpDirs();
+    write(base, 'wide.png', makePng(40, 2000, WHITE));
+    write(curr, 'wide.png', makePngWithRect(40, 2000, WHITE, { x: 0, y: 100, w: 40, h: 1500, color: RED }));
+    write(base, 'grew.png', makePng(40, 2000, WHITE));
+    write(curr, 'grew.png', makePngWithRect(40, 2100, WHITE, { x: 0, y: 1000, w: 40, h: 10, color: RED }));
+    const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 });
+    for (const r of s.results) {
+      expect(r.status).toBe('changed');
+      expect(r.crop).toBeUndefined();
+    }
+  });
+
+  it('unchanged results carry no images', () => {
     const { base, curr } = tmpDirs();
     write(base, 'a.png', makePng(20, 20, WHITE));
     write(curr, 'a.png', makePng(20, 20, WHITE));
-    const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 });
-    expect(s.results[0].diffMaskPng).toBeUndefined();
+    const r = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0 }).results[0];
+    expect(r.baselinePng ?? r.currentPng ?? r.crop).toBeUndefined();
   });
 
   it('diffRatio tolerance masks small changes', () => {
@@ -99,7 +118,7 @@ describe('compareDirectories', () => {
     write(curr, 'a.png', makePng(60, 40, WHITE));
     const s = compareDirectories(base, curr, { threshold: 0.1, diffRatio: 0.99 });
     expect(s.changed).toBe(1);
-    expect(s.results[0].diffPng).toBeInstanceOf(Buffer);
+    expect(s.results[0].crop).toBeUndefined();
   });
 
   it('buckets added and removed screenshots', () => {
@@ -124,5 +143,18 @@ describe('compareDirectories', () => {
     const s = compareDirectories('/nope', curr, { threshold: 0.1, diffRatio: 0 });
     expect(s.added).toBe(1);
     expect(s.hasChanges).toBe(false);
+  });
+});
+
+describe('cropBand', () => {
+  it('pads the changed rows by the margin, clamped to the page', () => {
+    expect(cropBand(1000, 1009, 5000)).toEqual({ top: 1000 - CROP_MARGIN, height: 10 + 2 * CROP_MARGIN });
+    expect(cropBand(0, 9, 5000)).toEqual({ top: 0, height: 10 + CROP_MARGIN });
+    expect(cropBand(4990, 4999, 5000)).toEqual({ top: 4990 - CROP_MARGIN, height: 10 + CROP_MARGIN });
+  });
+
+  it('keeps the whole page when the band would cover most of it or save little', () => {
+    expect(cropBand(100, 3500, 5000)).toBeNull(); // more than 60% of the page
+    expect(cropBand(100, 110, 600)).toBeNull(); // saves under 400 rows
   });
 });

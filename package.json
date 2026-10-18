@@ -1,6 +1,6 @@
 {
   "name": "visual-regression-action",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Visual regression testing for GitHub Actions with artifact-based baselines — no screenshots in git",

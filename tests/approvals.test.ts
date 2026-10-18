@@ -150,7 +150,7 @@ describe('applyApprovals', () => {
   function summary(): CompareSummary {
     return {
       results: [
-        { name: 'home.png', status: 'changed', diffRatio: 0.01, baselinePng: base, currentPng: cur, diffPng: cur },
+        { name: 'home.png', status: 'changed', diffRatio: 0.01, baselinePng: base, currentPng: cur },
         { name: 'old.png', status: 'removed', diffRatio: 0, baselinePng: base },
         { name: 'new.png', status: 'added', diffRatio: 0, currentPng: cur },
       ],

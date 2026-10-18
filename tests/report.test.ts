@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, buildReportData, MAX_CHECKBOXES, ReportMeta } from '../src/report';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { generateHtmlReport, generateMarkdownSummary, approvalOutcomeBody, buildReport, htmlReportChunks, writeHtmlReport, pngSize, MAX_CHECKBOXES, ReportMeta } from '../src/report';
+import { makePng } from './helpers/png';
 import { checkboxItems, parseApprovalCommands } from '../src/approvals';
 import type { ReportData } from '../src/report-data';
 import { CompareSummary, ScreenshotResult } from '../src/types';
@@ -18,7 +22,8 @@ const png = Buffer.from(
   'hex'
 );
 // Distinct payload so mask embeds are countable separately from the shared fixture PNG.
-const maskPng = Buffer.from('not-a-real-png-but-a-distinct-mask-payload');
+// A second, distinct PNG, so each embedded image can be told apart by its bytes.
+const png2 = makePng(3, 2, [255, 0, 0, 255]);
 
 function summary(): CompareSummary {
   return {
@@ -27,7 +32,7 @@ function summary(): CompareSummary {
       { name: 'footer.png', status: 'unchanged', diffRatio: 0 },
       { name: 'old.png', status: 'removed', diffRatio: 0, baselinePng: png },
       { name: 'nav/menu.png', status: 'added', diffRatio: 0, currentPng: png },
-      { name: 'home.png', status: 'changed', diffRatio: 0.0123, baselinePng: png, currentPng: png, diffPng: png, diffMaskPng: maskPng },
+      { name: 'home.png', status: 'changed', diffRatio: 0.0123, baselinePng: png, currentPng: png2 },
     ],
     changed: 1,
     added: 1,
@@ -170,7 +175,7 @@ describe('generateMarkdownSummary', () => {
 
   it('escapes pipe characters in screenshot names so they cannot break the table', () => {
     const s: CompareSummary = {
-      results: [{ name: 'a|b.png', status: 'added', diffRatio: 0.01, baselinePng: png, currentPng: png, diffPng: png, diffMaskPng: maskPng }],
+      results: [{ name: 'a|b.png', status: 'added', diffRatio: 0.01, baselinePng: png, currentPng: png }],
       changed: 1, added: 0, removed: 0, unchanged: 0, hasChanges: true,
     };
     const md = generateMarkdownSummary(s, meta);
@@ -244,14 +249,19 @@ function injected(html: string): ReportData {
   return JSON.parse(m![1]);
 }
 
+/** The embedded images, as id → bytes, in document order. */
+function embedded(html: string): Array<[string, Buffer]> {
+  return [...html.matchAll(/<i hidden id="([^"]+)" data-png="([^"]*)"><\/i>/g)].map((m) => [m[1], Buffer.from(m[2], 'base64')]);
+}
+
 describe('generateHtmlReport', () => {
-  it('injects the report data into the prebuilt template, replacing the placeholder', () => {
-    const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7' });
+  it('fills the prebuilt template with metadata, replacing both placeholders', () => {
+    const html = generateHtmlReport(summary(), { ...meta, prUrl: 'https://github.com/Fiestaboard/demo/pull/7', threshold: 0.2 });
     expect(html.toLowerCase()).toContain('<!doctype html>');
     expect(html).not.toContain('__VRT_DATA__');
-    const data = injected(html);
-    expect(data).toMatchObject({
-      version: 1,
+    expect(html).not.toContain('__VRT_IMAGES__');
+    expect(injected(html)).toMatchObject({
+      version: 2,
       repo: 'Fiestaboard/demo',
       runUrl: meta.runUrl,
       sha: 'abc1234',
@@ -259,7 +269,15 @@ describe('generateHtmlReport', () => {
       baselineRunUrl: meta.baselineRunUrl,
       missingBaseline: false,
       prUrl: 'https://github.com/Fiestaboard/demo/pull/7',
+      threshold: 0.2,
     });
+  });
+
+  it('keeps pixels out of the metadata, so the reviewer can draw before the images arrive', () => {
+    const html = generateHtmlReport(summary(), meta);
+    const json = html.match(/<script type="application\/json" id="vrt-data">([\s\S]*?)<\/script>/)![1];
+    expect(json).not.toContain(png.toString('base64'));
+    expect(json.length).toBeLessThan(2000);
   });
 
   it('orders items changed → added → removed → unchanged regardless of input order', () => {
@@ -267,23 +285,41 @@ describe('generateHtmlReport', () => {
     expect(data.items.map((i) => i.name)).toEqual(['home.png', 'nav/menu.png', 'old.png', 'footer.png']);
   });
 
-  it('carries the images each status needs as data URIs', () => {
-    const [changed, added, removed, unchanged] = injected(generateHtmlReport(summary(), meta)).items;
-    const uri = `data:image/png;base64,${png.toString('base64')}`;
-    expect(changed).toMatchObject({ status: 'changed', diffRatio: 0.0123, baseline: uri, current: uri, diff: uri });
-    expect(changed.mask).toBe(`data:image/png;base64,${maskPng.toString('base64')}`);
-    expect(added).toMatchObject({ status: 'added', current: uri });
+  it('embeds each image once, after the app script, in review order', () => {
+    const html = generateHtmlReport(summary(), meta);
+    const data = injected(html);
+    const [changed, added, removed, unchanged] = data.items;
+    expect(changed.baseline).toEqual({ id: 'vrt-img-0', width: 1, height: 1 });
+    expect(changed.current).toEqual({ id: 'vrt-img-1', width: 3, height: 2 });
+    expect(added.current?.id).toBe('vrt-img-2');
     expect(added.baseline).toBeUndefined();
-    expect(removed).toMatchObject({ status: 'removed', baseline: uri });
+    expect(removed.baseline?.id).toBe('vrt-img-3');
     expect(removed.current).toBeUndefined();
-    expect(unchanged.baseline ?? unchanged.current ?? unchanged.diff).toBeUndefined();
+    expect(unchanged.baseline ?? unchanged.current).toBeUndefined();
+
+    const imgs = embedded(html);
+    expect(imgs.map(([id]) => id)).toEqual(['vrt-img-0', 'vrt-img-1', 'vrt-img-2', 'vrt-img-3']);
+    expect(imgs[0][1].equals(png)).toBe(true);
+    expect(imgs[1][1].equals(png2)).toBe(true);
+    // The app runs as soon as it arrives, before the images that follow it.
+    const app = html.indexOf('<script type="module" async>');
+    expect(app).toBeGreaterThan(html.indexOf('id="vrt-data"'));
+    expect(app).toBeLessThan(html.indexOf('id="vrt-img-0"'));
+    // No diff or overlay is shipped: the browser computes them.
+    expect(html.split(png.toString('base64')).length - 1).toBe(3);
   });
 
-  it('embeds each PNG exactly once', () => {
-    const html = generateHtmlReport(summary(), meta);
-    // home.png: baseline + current + diff = 3; nav/menu.png and old.png: one each.
-    expect(html.split(png.toString('base64')).length - 1).toBe(5);
-    expect(html.split(maskPng.toString('base64')).length - 1).toBe(1);
+  it('ships the cropped band of a local change and records where it sits', () => {
+    const s = summary();
+    const band = makePng(3, 1, [0, 0, 255, 255]);
+    s.results[3].crop = { top: 900, height: 1, baselinePng: band, currentPng: band };
+    const html = generateHtmlReport(s, meta);
+    const changed = injected(html).items[0];
+    expect(changed.crop).toEqual({ top: 900, height: 1, fullHeight: 2 });
+    expect(changed.baseline).toEqual({ id: 'vrt-img-0', width: 3, height: 1 });
+    const imgs = embedded(html);
+    expect(imgs[0][1].equals(band)).toBe(true);
+    expect(imgs.some(([, b]) => b.equals(png2))).toBe(false); // the full current page is not shipped
   });
 
   it('passes approval state through', () => {
@@ -306,7 +342,24 @@ describe('generateHtmlReport', () => {
     expect(injected(html).items[0].name).toBe(name); // "$&" stays literal, the name round-trips
   });
 
-  it('buildReportData derives the pin from the head sha', () => {
-    expect(buildReportData(summary(), { ...meta, sha: '0123456789abcdef' }).pin).toBe('0123456');
+  it('derives the pin from the head sha and defaults the threshold', () => {
+    const { data } = buildReport(summary(), { ...meta, sha: '0123456789abcdef' });
+    expect(data.pin).toBe('0123456');
+    expect(data.threshold).toBe(0.1);
+  });
+
+  it('writes to disk exactly what it generates, one piece at a time', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vrt-report-')), 'r.html');
+    const bytes = writeHtmlReport(file, summary(), meta);
+    const html = generateHtmlReport(summary(), meta);
+    expect(fs.readFileSync(file, 'utf8')).toBe(html);
+    expect(bytes).toBe(Buffer.byteLength(html));
+    expect([...htmlReportChunks(summary(), meta)].length).toBeGreaterThan(4);
+  });
+});
+
+describe('pngSize', () => {
+  it('reads the dimensions from the header', () => {
+    expect(pngSize(makePng(7, 5, [0, 0, 0, 255]))).toEqual({ width: 7, height: 5 });
   });
 });

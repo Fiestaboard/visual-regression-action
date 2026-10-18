@@ -15,7 +15,8 @@ import { Check, Maximize2, X } from 'lucide-react';
 import * as React from 'react';
 import type { ReportItem, ReportStatus } from '../../../src/report-data';
 import { isLocked, isVotable, pct, STATUS_LABEL } from '../review';
-import { BlinkView, Figure, OverlayView, SideBySideView, SwipeScrub, SwipeView, VIEW_LABEL, VIEW_MODES, type ViewMode } from './views';
+import { BlinkView, CropNote, Figure, OverlayView, SideBySideView, SwipeScrub, SwipeView, VIEW_LABEL, VIEW_MODES, type ViewMode } from './views';
+import { useItemImages, useNearViewport } from '../use-images';
 
 export const STATUS_DOT: Record<ReportStatus, 'warning' | 'info' | 'danger' | 'success'> = {
   changed: 'warning',
@@ -107,8 +108,9 @@ interface CardProps {
   onExpand: () => void;
 }
 
-export function ScreenshotCard({ item, id, verdict, onVote, onExpand }: CardProps) {
-  if (item.status === 'unchanged') {
+export function ScreenshotCard(props: CardProps) {
+  if (props.item.status === 'unchanged') {
+    const { item, id } = props;
     return (
       <Card id={id} data-status="unchanged" className="flex scroll-mt-36 items-center gap-3 px-5 py-3">
         <StatusBadge status="unchanged" />
@@ -116,8 +118,18 @@ export function ScreenshotCard({ item, id, verdict, onVote, onExpand }: CardProp
       </Card>
     );
   }
+  return <ImageCard {...props} />;
+}
+
+function ImageCard({ item, id, verdict, onVote, onExpand }: CardProps) {
+  // Images load only once the card nears the viewport: a report can hold
+  // thousands of them, and most never get scrolled to.
+  const [nearRef, near] = useNearViewport<HTMLDivElement>();
+  const [mode, setMode] = React.useState<ViewMode>('swipe');
+  const imgs = useItemImages(item, { enabled: near, withDiff: mode === 'overlay' || mode === 'sbs' });
+  const single = item.status === 'added' ? item.current : item.baseline;
   return (
-    <Card id={id} data-status={item.status} className="scroll-mt-36 gap-0 p-5">
+    <Card id={id} ref={nearRef} data-status={item.status} className="scroll-mt-36 gap-0 p-5">
       <header className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <StatusBadge status={item.status} />
         <h3 className="mr-auto min-w-0 font-mono text-[15px] font-medium break-all">{item.name}</h3>
@@ -130,20 +142,29 @@ export function ScreenshotCard({ item, id, verdict, onVote, onExpand }: CardProp
         </Button>
       </header>
       {item.status === 'changed' ? (
-        <ChangedStage item={item} />
+        <ChangedStage item={item} imgs={imgs} mode={mode} onMode={setMode} />
       ) : (
         <Figure
           caption={item.status === 'added' ? 'Current (new)' : 'Baseline (removed)'}
-          src={item.status === 'added' ? item.current : item.baseline}
+          src={item.status === 'added' ? imgs.current : imgs.baseline}
           alt={item.status === 'added' ? 'current (new)' : 'baseline (removed)'}
+          size={single}
+          error={imgs.error}
         />
       )}
     </Card>
   );
 }
 
-function ChangedStage({ item }: { item: ReportItem }) {
-  const [mode, setMode] = React.useState<ViewMode>('swipe');
+interface StageProps {
+  item: ReportItem;
+  imgs: ReturnType<typeof useItemImages>;
+  mode: ViewMode;
+  onMode: (m: ViewMode) => void;
+}
+
+function ChangedStage({ item, imgs, mode, onMode: setMode }: StageProps) {
+  const size = item.current;
   const [split, setSplit] = React.useState(50);
   const [maskOpacity, setMaskOpacity] = React.useState(100);
   return (
@@ -158,14 +179,14 @@ function ChangedStage({ item }: { item: ReportItem }) {
           ))}
         </TabsList>
         <TabsContent value="swipe" className="mt-3">
-          <SwipeView baseline={item.baseline} current={item.current} split={split} onSplit={setSplit} />
+          <SwipeView baseline={imgs.baseline} current={imgs.current} split={split} onSplit={setSplit} size={size} />
           <SwipeScrub split={split} onSplit={setSplit} className="mt-4" />
           <Text size="xs" tone="muted" className="mt-2">
             Left of the line: baseline · right: current
           </Text>
         </TabsContent>
         <TabsContent value="overlay" className="mt-3">
-          <OverlayView current={item.current} mask={item.mask} opacity={maskOpacity} />
+          <OverlayView current={imgs.current} mask={imgs.mask} opacity={maskOpacity} size={size} diffError={imgs.diffError} />
           <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
             <label className="flex items-center gap-3 text-xs text-muted-foreground">
               Mask
@@ -184,15 +205,16 @@ function ChangedStage({ item }: { item: ReportItem }) {
           </div>
         </TabsContent>
         <TabsContent value="blink" className="mt-3">
-          <BlinkView baseline={item.baseline} current={item.current} />
+          <BlinkView baseline={imgs.baseline} current={imgs.current} size={size} />
           <Text size="xs" tone="muted" className="mt-2">
             Alternating baseline ↔ current. Motion off? Click the image to flip.
           </Text>
         </TabsContent>
         <TabsContent value="sbs" className="mt-3">
-          <SideBySideView baseline={item.baseline} current={item.current} diff={item.diff} />
+          <SideBySideView baseline={imgs.baseline} current={imgs.current} diff={imgs.diff} size={size} diffError={imgs.diffError} />
         </TabsContent>
       </Tabs>
+      <CropNote crop={item.crop} className="mt-3" />
     </>
   );
 }

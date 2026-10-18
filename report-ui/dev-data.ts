@@ -1,5 +1,5 @@
 // Fixture for `npm run dev:ui` only — never bundled into the production template.
-import type { ReportData, ReportItem } from '../src/report-data';
+import type { ImageRef, ReportData, ReportItem } from '../src/report-data';
 
 function screen(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): string {
   const c = document.createElement('canvas');
@@ -23,14 +23,14 @@ function cards(g: CanvasRenderingContext2D, accent: string, offset = 0) {
   }
 }
 
-function mask(w: number, h: number, x: number, y: number, mw: number, mh: number): string {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d')!;
-  g.fillStyle = 'rgba(255,0,128,0.9)';
-  g.fillRect(x, y, mw, mh);
-  return c.toDataURL('image/png');
+/** Adds an image the way the action embeds one, and returns its reference. */
+function embed(id: string, dataUrl: string, width: number, height: number): ImageRef {
+  const el = document.createElement('i');
+  el.hidden = true;
+  el.id = id;
+  el.setAttribute('data-png', dataUrl.slice(dataUrl.indexOf(',') + 1));
+  document.body.append(el);
+  return { id, width, height };
 }
 
 export function makeDevData(): ReportData {
@@ -38,15 +38,25 @@ export function makeDevData(): ReportData {
   const H = 480;
   const base = screen(W, H, (g) => cards(g, '#2563eb'));
   const cur = screen(W, H, (g) => cards(g, '#db2777', 12));
+  let n = 0;
+  const img = (dataUrl: string) => embed(`vrt-img-dev-${n++}`, dataUrl, W, H);
   const items: ReportItem[] = [
-    { name: 'home.png', status: 'changed', diffRatio: 0.0731, approved: false, baseline: base, current: cur, diff: mask(W, H, 32, 96, 720, 180), mask: mask(W, H, 32, 96, 720, 180) },
-    { name: 'settings/profile.png', status: 'changed', diffRatio: 0.0042, approved: true, baseline: base, current: base, diff: mask(W, H, 40, 120, 60, 20), mask: mask(W, H, 40, 120, 60, 20) },
-    { name: 'nav/menu.png', status: 'added', diffRatio: 0, approved: false, current: cur },
-    { name: 'legacy/old banner.png', status: 'removed', diffRatio: 0, approved: false, baseline: base },
+    { name: 'home.png', status: 'changed', diffRatio: 0.0731, approved: false, baseline: img(base), current: img(cur) },
+    {
+      name: 'settings/profile.png',
+      status: 'changed',
+      diffRatio: 0.0042,
+      approved: true,
+      baseline: img(base),
+      current: img(screen(W, H, (g) => cards(g, '#2563eb', 2))),
+      crop: { top: 1200, height: H, fullHeight: 4800 },
+    },
+    { name: 'nav/menu.png', status: 'added', diffRatio: 0, approved: false, current: img(cur) },
+    { name: 'legacy/old banner.png', status: 'removed', diffRatio: 0, approved: false, baseline: img(base) },
     { name: 'footer.png', status: 'unchanged', diffRatio: 0, approved: false },
   ];
   return {
-    version: 1,
+    version: 2,
     repo: 'Fiestaboard/demo',
     runUrl: 'https://github.com/Fiestaboard/demo/actions/runs/1',
     sha: 'abc1234def5678abc1234def5678abc1234def56',
@@ -54,6 +64,7 @@ export function makeDevData(): ReportData {
     baselineRunUrl: 'https://github.com/Fiestaboard/demo/actions/runs/0',
     missingBaseline: false,
     prUrl: 'https://github.com/Fiestaboard/demo/pull/7',
+    threshold: 0.1,
     items,
   };
 }

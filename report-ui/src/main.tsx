@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ReportData } from '../../src/report-data';
 import { App } from './App';
+import { ThresholdContext } from './use-images';
 import './styles.css';
 
 function readData(): ReportData | null {
@@ -19,7 +20,13 @@ async function boot() {
   const root = createRoot(document.getElementById('root')!);
   root.render(
     <StrictMode>
-      {data ? <App data={data} /> : <p className="p-8">This report has no data.</p>}
+      {data ? (
+        <ThresholdContext.Provider value={data.threshold}>
+          <App data={data} />
+        </ThresholdContext.Provider>
+      ) : (
+        <p className="p-8">This report has no data.</p>
+      )}
     </StrictMode>
   );
 }
